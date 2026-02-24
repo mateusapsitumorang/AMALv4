@@ -1,0 +1,1812 @@
+# Copyright (C) 2010-2015 Cuckoo Foundation.
+# This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
+# See the file 'docs/LICENSE' for copying permission.
+
+# Imports for the batch sort.
+# http://stackoverflow.com/questions/10665925/how-to-sort-huge-files-with-python
+# http://code.activestate.com/recipes/576755/
+
+import binascii
+import heapq
+import ipaddress
+import logging
+import os
+import socket
+import struct
+import sys
+import tempfile
+import traceback
+from base64 import b64encode
+from collections import OrderedDict, namedtuple, defaultdict
+from contextlib import suppress
+from hashlib import md5, sha1, sha256
+from itertools import islice
+from json import loads
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse, urlunparse
+
+import cachetools.func
+import dns.resolver
+from dns.reversename import from_address
+
+import utils.profiling as profiling
+from data.safelist.domains import domain_passlist_re
+from lib.cuckoo.common.abstracts import Processing
+from lib.cuckoo.common.config import Config
+from lib.cuckoo.common.dns import resolve
+from lib.cuckoo.common.exceptions import CuckooProcessingError
+from lib.cuckoo.common.irc import ircMessage
+from lib.cuckoo.common.network_utils import _norm_domain
+from lib.cuckoo.common.objects import File
+from lib.cuckoo.common.path_utils import path_delete, path_exists, path_mkdir, path_read_file, path_write_file
+from lib.cuckoo.common.safelist import is_safelisted_domain
+from lib.cuckoo.common.utils import convert_to_printable
+
+# from lib.cuckoo.common.safelist import is_safelisted_ip
+log = logging.getLogger(__name__)
+
+
+
+
+try:
+    import re2 as re
+except ImportError:
+    import re
+
+
+HAVE_GEOIP = False
+with suppress(ImportError):
+    import maxminddb
+
+    HAVE_GEOIP = True
+
+try:
+    import dpkt
+
+    IS_DPKT = True
+except ImportError:
+    IS_DPKT = False
+    log.error("Missed dependency: poetry run pip install")
+
+HAVE_HTTPREPLAY = False
+try:
+    import httpreplay
+    import httpreplay.cut
+
+    if httpreplay.__version__ == "0.3":
+        HAVE_HTTPREPLAY = True
+except ImportError:
+    log.error("OPTIONAL! Missed dependency: poetry run pip install -U git+https://github.com/CAPESandbox/httpreplay")
+except SystemError as e:
+    log.error("httpreplay: %s", str(e))
+
+# required to work webgui
+CUCKOO_ROOT = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "..")
+sys.path.append(CUCKOO_ROOT)
+
+TLS_HANDSHAKE = 22
+PCAP_BYTES_HTTPREPLAY_WARN_LIMIT = 30 * 1024 * 1024
+
+DOMAIN_FILTERS = (".*\\.windows\\.com$", ".*\\.in\\-addr\\.arpa$", ".*\\.ip6\\.arpa$")
+DOMAIN_FILTERS_RE = [re.compile(filter) for filter in DOMAIN_FILTERS]
+
+Keyed = namedtuple("Keyed", ["key", "obj"])
+Packet = namedtuple("Packet", ["raw", "ts"])
+
+cfg = Config()
+proc_cfg = Config("processing")
+routing_cfg = Config("routing")
+enabled_passlist = proc_cfg.network.dnswhitelist
+passlist_file = proc_cfg.network.dnswhitelist_file
+
+enabled_ip_passlist = proc_cfg.network.ipwhitelist
+ip_passlist_file = proc_cfg.network.ipwhitelist_file
+
+enabled_network_passlist = proc_cfg.network.network_passlist
+network_passlist_file = proc_cfg.network.network_passlist_file
+
+# Be less verbose about httpreplay logging messages.
+logging.getLogger("httpreplay").setLevel(logging.CRITICAL)
+
+comment_re = re.compile(r"\s*#.*")
+if enabled_passlist and passlist_file:
+    f = path_read_file(os.path.join(CUCKOO_ROOT, passlist_file), mode="text")
+    for domain in f.splitlines():
+        domain = comment_re.sub("", domain).strip()
+        if domain:
+            domain_passlist_re.append(domain)
+
+ip_passlist = set()
+network_passlist = []
+
+if enabled_ip_passlist and ip_passlist_file:
+    f = path_read_file(os.path.join(CUCKOO_ROOT, ip_passlist_file), mode="text")
+    for ip in f.splitlines():
+        ip = comment_re.sub("", ip).strip()
+        if ip:
+            ip_passlist.add(ip)
+
+if enabled_network_passlist and network_passlist_file and os.path.isfile(network_passlist_file):
+    with open(os.path.join(CUCKOO_ROOT, network_passlist_file), "r") as f:
+        for cidr in set(f.read().splitlines()):
+            if cidr.startswith("#") or len(cidr.strip()) == 0:
+                # comment or empty line
+                continue
+
+            network_passlist.append(ipaddress.ip_network(cidr.strip()))
+
+if HAVE_GEOIP and proc_cfg.network.maxmind_database:
+    # Reload the maxmind database when it has changed, but only check the file system every 5 minutes.
+    _MAXMINDDB_PATH = os.path.join(CUCKOO_ROOT, proc_cfg.network.maxmind_database)
+    _MAXMINDDB_MTIME = None
+    _MAXMINDDB_CLIENT = None
+
+    @cachetools.func.ttl_cache(maxsize=None, ttl=5 * 60)
+    def get_maxminddb_client():
+        global _MAXMINDDB_CLIENT
+        global _MAXMINDDB_MTIME
+        if path_exists(_MAXMINDDB_PATH):
+            mtime = os.stat(_MAXMINDDB_PATH).st_mtime
+            if mtime != _MAXMINDDB_MTIME:
+                _MAXMINDDB_MTIME = mtime
+                log.info("Loading maxmind database from %s", _MAXMINDDB_PATH)
+                _MAXMINDDB_CLIENT = maxminddb.open_database(_MAXMINDDB_PATH)
+            return _MAXMINDDB_CLIENT
+        return None
+
+    # Do initial load
+    _MAXMINDDB_CLIENT = get_maxminddb_client()
+
+else:
+
+    def get_maxminddb_client():
+        return None
+
+
+class Pcap:
+    """Reads network data from PCAP file."""
+
+    ssl_ports = (443,)
+
+    def __init__(self, filepath, ja3_fprints, options):
+        """Creates a new instance.
+        @param filepath: path to PCAP file
+        """
+        self.filepath = filepath
+        self.ja3_fprints = ja3_fprints
+        self.options = options
+
+        self.ip_n_ports = {}
+
+        # List of all hosts.
+        self.hosts = []
+        # List containing all non-private IP addresses.
+        self.unique_hosts = []
+        # List of unique domains.
+        self.unique_domains = []
+        # List containing all TCP packets.
+        self.tcp_connections = []
+        self.tcp_connections_seen = set()
+        # Lookup table to identify connection requests to services or IP
+        # addresses that are no longer available.
+        self.tcp_connections_dead = {}
+        self.dead_hosts = {}
+        self.alive_hosts = {}
+        # List containing all UDP packets.
+        self.udp_connections = []
+        self.udp_connections_seen = set()
+        # List containing all ICMP requests.
+        self.icmp_requests = []
+        # List containing all HTTP requests.
+        self.http_requests = OrderedDict()
+        # List containing all TLS/SSL3 key combinations.
+        self.tls_keys = []
+        # List containing all DNS requests.
+        self.dns_requests = OrderedDict()
+        self.dns_answers = set()
+        # List of known good DNS servers
+        self.known_dns = self._build_known_dns()
+        # List of all used DNS servers
+        self.dns_servers = []
+        # List containing all SMTP requests.
+        self.smtp_requests = []
+        # Reconstruncted SMTP flow.
+        self.smtp_flow = {}
+        # List containing all IRC requests.
+        self.irc_requests = []
+        # Dictionary containing all the results of this processing.
+        self.results = {}
+        # DNS ignore list
+        self.safelist_enabled = self.options.get("safelist_dns")
+
+    def _is_safelisted(self, conn, hostname):
+        """Check if safelisting conditions are met"""
+        # Is safelistng enabled?
+        if not self.safelist_enabled:
+            return False
+
+        # Is DNS recording coming from allowed NS server.
+        if conn.get("src") not in self.known_dns and conn.get("dst") not in self.known_dns:
+            return False
+
+        # Is hostname safelisted.
+        if not is_safelisted_domain(hostname):
+            return False
+
+        return True
+
+    def _build_known_dns(self):
+        """Build known DNS list."""
+        _known_dns = self.options.get("allowed_dns")
+        if _known_dns is not None:
+            return [r.strip() for r in _known_dns.split(",")]
+        return []
+
+    def _dns_gethostbyname(self, name):
+        """Get host by name wrapper.
+        @param name: hostname.
+        @return: IP address or blank
+        """
+        return resolve(name) if cfg.processing.resolve_dns else ""
+
+    def _is_private_ip(self, ip):
+        """Check if the IP belongs to private network blocks.
+        @param ip: IP address to verify.
+        @return: boolean representing whether the IP belongs or not to
+                 a private network block.
+        """
+        networks = (
+            ("0.0.0.0", 8),
+            ("10.0.0.0", 8),
+            ("100.64.0.0", 10),
+            ("127.0.0.0", 8),
+            ("169.254.0.0", 16),
+            ("172.16.0.0", 12),
+            ("192.0.0.0", 24),
+            ("192.0.2.0", 24),
+            ("192.88.99.0", 24),
+            ("192.168.0.0", 16),
+            ("198.18.0.0", 15),
+            ("198.51.100.0", 24),
+            ("203.0.113.0", 24),
+            ("240.0.0.0", 4),
+            ("255.255.255.255", 32),
+            ("224.0.0.0", 4),
+        )
+
+        with suppress(Exception):
+            ipaddr = struct.unpack(">I", socket.inet_aton(ip))[0]
+            for netaddr, bits in networks:
+                network_low = struct.unpack(">I", socket.inet_aton(netaddr))[0]
+                network_high = network_low | (1 << (32 - bits)) - 1
+                if ipaddr <= network_high and ipaddr >= network_low:
+                    return True
+
+    def _get_cn(self, ip):
+        if proc_cfg.network.country_lookup:
+            maxminddb_client = get_maxminddb_client()
+            if maxminddb_client:
+                try:
+                    ip_info = maxminddb_client.get(ip)
+                    # ipinfo db
+                    if "continent_name" in ip_info:
+                        return ip_info.get("country", "unknown").lower(), ip_info.get("asn", ""), ip_info.get("as_name", "")
+                    else:
+                        return ip_info.get("country", {}).get("names", {}).get("en", "unknown"), "", ""
+                except Exception:
+                    log.debug("Unable to resolve GEOIP for %s", ip)
+        return "unknown", "", ""
+
+    def _add_hosts(self, connection):
+        """Add IPs to unique list.
+        @param connection: connection data
+        """
+        with suppress(Exception):
+            if connection["dst"] not in self.hosts:
+                ip = convert_to_printable(connection["dst"])
+
+                if ip not in self.hosts:
+                    ip_address = ipaddress.ip_address(ip)
+                    if ip in ip_passlist or any(ip_address in network for network in network_passlist):
+                        return False
+                    self.hosts.append(ip)
+
+                    # We add external IPs to the list, only the first time
+                    # we see them and if they're the destination of the
+                    # first packet they appear in.
+                    if not self._is_private_ip(ip):
+                        self.unique_hosts.append(ip)
+                        self.ip_n_ports.setdefault(ip, []).append(connection["dport"])
+
+    def _enrich_hosts(self, unique_hosts):
+        enriched_hosts = []
+
+        if cfg.processing.reverse_dns:
+            d = dns.resolver.Resolver()
+            d.timeout = 5.0
+            d.lifetime = 5.0
+
+        while unique_hosts:
+            ip = unique_hosts.pop()
+            inaddrarpa = ""
+            hostname = ""
+            if cfg.processing.reverse_dns:
+                with suppress(Exception):
+                    inaddrarpa = d.query(from_address(ip), "PTR").rrset[0].to_text()
+            for request in self.dns_requests.values():
+                for answer in request["answers"]:
+                    if answer["data"] == ip:
+                        hostname = request["request"]
+                        break
+                if hostname:
+                    break
+            country_name, asn, asn_name = self._get_cn(ip)
+            enriched_hosts.append(
+                {
+                    "ip": ip,
+                    "country_name": country_name,
+                    "asn": asn,
+                    "asn_name": asn_name,
+                    "hostname": hostname,
+                    "inaddrarpa": inaddrarpa,
+                    "ports": self.ip_n_ports.get(ip, []),
+                }
+            )
+        return enriched_hosts
+
+    def _tcp_dissect(self, conn, data, ts):
+        """Runs all TCP dissectors.
+        @param conn: connection.
+        @param data: payload data.
+        @param ts: timestamp.
+        """
+        if self._check_http(data):
+            self._add_http(conn, data, ts)
+        # HTTPS.
+        elif conn["dport"] in self.ssl_ports or conn["sport"] in self.ssl_ports:
+            self._https_identify(conn, data)
+        # SMTP.
+        elif conn["dport"] in (25, 587):
+            self._reassemble_smtp(conn, data)
+        # IRC.
+        elif conn["dport"] != 21 and self._check_irc(data):
+            self._add_irc(conn, data)
+
+    def _udp_dissect(self, conn, data, ts):
+        """Runs all UDP dissectors.
+        @param conn: connection.
+        @param data: payload data.
+        @param ts: timestamp.
+        """
+        # Select DNS and MDNS traffic.
+        if (conn["dport"] in (53, 5353) or conn["sport"] in (53, 5353)) and self._check_dns(data):
+            self._add_dns(data, ts)
+
+    def _check_icmp(self, icmp_data):
+        """Checks for ICMP traffic.
+        @param icmp_data: ICMP data flow.
+        """
+        try:
+            return isinstance(icmp_data, dpkt.icmp.ICMP) and len(icmp_data.data) > 0
+        except Exception:
+            return False
+
+    def _icmp_dissect(self, conn, data):
+        """Runs all ICMP dissectors.
+        @param conn: connection.
+        @param data: payload data.
+        """
+
+        if not self._check_icmp(data):
+            return
+
+        # If ICMP packets are coming from the host, it probably isn't
+        # relevant traffic, hence we can skip from reporting it.
+        if conn["src"] == cfg.resultserver.ip:
+            return
+
+        entry = {"src": conn["src"], "dst": conn["dst"], "type": data.type}
+        # Extract data from dpkg.icmp.ICMP.
+        try:
+            entry["data"] = convert_to_printable(data.data.data)
+        except Exception:
+            entry["data"] = ""
+
+        self.icmp_requests.append(entry)
+
+    def _check_dns(self, udpdata):
+        """Checks for DNS traffic.
+        @param udpdata: UDP data flow.
+        """
+        try:
+            dpkt.dns.DNS(udpdata)
+        except Exception:
+            return False
+
+        return True
+
+    def _add_dns(self, udpdata, ts):
+        """Adds a DNS data flow.
+        @param udpdata: UDP data flow.
+        @param ts: timestamp.
+        """
+        dns = dpkt.dns.DNS(udpdata)
+
+        # DNS query parsing.
+        query = {}
+
+        if dns.rcode == dpkt.dns.DNS_RCODE_NOERR or dns.qr == dpkt.dns.DNS_R or dns.opcode == dpkt.dns.DNS_QUERY:
+            # DNS question.
+            try:
+                q_name = dns.qd[0].name
+                q_type = dns.qd[0].type
+            except IndexError:
+                return False
+
+            query["request"] = q_name
+
+            # See https://dpkt.readthedocs.io/en/latest/_modules/dpkt/dns.html
+            type_mapping = {
+                dpkt.dns.DNS_A: "A",
+                dpkt.dns.DNS_NS: "NS",
+                dpkt.dns.DNS_CNAME: "CNAME",
+                dpkt.dns.DNS_SOA: "SOA",
+                dpkt.dns.DNS_NULL: "NULL",
+                dpkt.dns.DNS_PTR: "PTR",
+                dpkt.dns.DNS_HINFO: "HINFO",
+                dpkt.dns.DNS_MX: "MX",
+                dpkt.dns.DNS_TXT: "TXT",
+                dpkt.dns.DNS_AAAA: "AAAA",
+                dpkt.dns.DNS_SRV: "SRV",
+                dpkt.dns.DNS_OPT: "OPT",
+            }
+            if q_type in type_mapping:
+                query["type"] = type_mapping[q_type]
+
+            # DNS answer.
+            query["answers"] = []
+            for answer in dns.an:
+                ans = {}
+                if answer.type == dpkt.dns.DNS_A:
+                    ans = {"type": "A"}
+                    try:
+                        ans["data"] = socket.inet_ntoa(answer.rdata)
+                    except socket.error:
+                        continue
+                elif answer.type == dpkt.dns.DNS_AAAA:
+                    ans = {"type": "AAAA"}
+                    try:
+                        ans["data"] = socket.inet_ntop(socket.AF_INET6, answer.rdata)
+                    except (socket.error, ValueError):
+                        continue
+                elif answer.type == dpkt.dns.DNS_CNAME:
+                    ans = {"type": "CNAME", "data": answer.cname}
+                elif answer.type == dpkt.dns.DNS_MX:
+                    ans = {"type": "MX", "data": answer.mxname}
+                elif answer.type == dpkt.dns.DNS_PTR:
+                    ans = {"type": "PTR", "data": answer.ptrname}
+                elif answer.type == dpkt.dns.DNS_NS:
+                    ans = {"type": "NS", "data": answer.nsname}
+                elif answer.type == dpkt.dns.DNS_SOA:
+                    ans = {
+                        "type": "SOA",
+                        "data": ",".join(
+                            [
+                                answer.mname,
+                                answer.rname,
+                                str(answer.serial),
+                                str(answer.refresh),
+                                str(answer.retry),
+                                str(answer.expire),
+                                str(answer.minimum),
+                            ]
+                        ),
+                    }
+                elif answer.type == dpkt.dns.DNS_HINFO:
+                    ans = {"type": "HINFO", "data": " ".join(answer.text)}
+                elif answer.type == dpkt.dns.DNS_TXT:
+                    ans = {"type": "TXT", "data": " ".join(answer.text)}
+
+                # TODO: add srv handling
+                query["answers"].append(ans)
+
+            if dns.rcode == dpkt.dns.DNS_RCODE_NXDOMAIN:
+                ans = {"type": "NXDOMAIN", "data": ""}
+                query["answers"].append(ans)
+
+            if enabled_passlist:
+                for reject in domain_passlist_re:
+                    if re.search(reject, query["request"]):
+                        for addip in query["answers"]:
+                            if routing_cfg.inetsim.enabled and addip["data"] == routing_cfg.inetsim.server:
+                                continue
+                            if addip["type"] in ("A", "AAAA"):
+                                ip_passlist.add(addip["data"])
+                        return True
+
+            self._add_domain(query["request"])
+
+            if "type" in query:
+                reqtuple = query["type"], query["request"]
+                if reqtuple not in self.dns_requests:
+                    self.dns_requests[reqtuple] = query
+                new_answers = {(i["type"], i["data"]) for i in query["answers"]} - self.dns_answers
+
+                self.dns_answers.update(new_answers)
+                self.dns_requests[reqtuple]["answers"].extend({"type": i[0], "data": i[1]} for i in new_answers)
+
+                if "first_seen" not in self.dns_requests[reqtuple]:
+                    self.dns_requests[reqtuple]["first_seen"] = ts
+        return True
+
+    def _add_domain(self, domain):
+        """Add a domain to unique list.
+        @param domain: domain name.
+        """
+        for regexp in DOMAIN_FILTERS_RE:
+            if regexp.match(domain):
+                return
+
+        for entry in self.unique_domains:
+            if entry["domain"] == domain:
+                return
+
+        self.unique_domains.append({"domain": domain, "ip": self._dns_gethostbyname(domain)})
+
+    def _check_http(self, tcpdata):
+        """Checks for HTTP traffic.
+        @param tcpdata: TCP data flow.
+        """
+        try:
+            r = dpkt.http.Request()
+            r.method, r.version, r.uri = None, None, None
+            r.unpack(tcpdata)
+        except dpkt.dpkt.UnpackError:
+            if r.method is not None or r.version is not None or r.uri is not None:
+                return True
+            return False
+
+        return True
+
+    def _add_http(self, conn, tcpdata, ts):
+        """Adds an HTTP flow.
+        @param conn: TCP connection info.
+        @param tcpdata: TCP data flow.
+        @param ts: timestamp.
+        """
+        if tcpdata in self.http_requests:
+            self.http_requests[tcpdata]["count"] += 1
+            return True
+
+        try:
+            http = dpkt.http.Request()
+            http.unpack(tcpdata)
+        except dpkt.dpkt.UnpackError:
+            pass
+
+        try:
+            entry = {"count": 1}
+
+            if "host" in http.headers and re.match(
+                r"^([A-Z0-9]|[A-Z0-9][A-Z0-9\-]{0,61}[A-Z0-9])(\.([A-Z0-9]|[A-Z0-9][A-Z0-9\-]{0,61}[A-Z0-9]))+(:[0-9]{1,5})?$",
+                http.headers["host"],
+                re.IGNORECASE,
+            ):
+                entry["host"] = convert_to_printable(http.headers["host"])
+            else:
+                entry["host"] = conn["dst"]
+
+            if enabled_passlist:
+                for reject in domain_passlist_re:
+                    if re.search(reject, entry["host"]):
+                        return False
+
+            entry["port"] = conn["dport"]
+
+            # Manually deal with cases when destination port is not the default one,
+            # and it is not included in host header.
+            netloc = entry["host"]
+            if entry["port"] != 80 and ":" not in netloc:
+                netloc += f":{entry['port']}"
+
+            # Sometimes the host is found inside the path in the HTTP headers. When that happens, parse the host outside of the path.
+            path = http.uri
+            if netloc and netloc in http.uri:
+                path = http.uri.split(netloc)[1]
+            elif entry["host"] and entry["host"] in http.uri:
+                path = http.uri.split(entry["host"])[1]
+
+            entry["data"] = convert_to_printable(tcpdata)
+            entry["uri"] = convert_to_printable(urlunparse(("http", netloc, path, None, None, None)))
+            entry["body"] = convert_to_printable(http.body)
+            entry["path"] = convert_to_printable(path)
+            entry["user-agent"] = convert_to_printable(http.headers["user-agent"]) if "user-agent" in http.headers else ""
+            entry["version"] = convert_to_printable(http.version)
+            entry["method"] = convert_to_printable(http.method)
+            entry["first_seen"] = ts
+            self.http_requests[tcpdata] = entry
+        except Exception:
+            return False
+
+        return True
+
+    def _https_identify(self, conn, data):
+        """Extract a combination of the Session ID, Client Random, and Server
+        Random in order to identify the accompanying master secret later."""
+        try:
+            record = dpkt.ssl.TLSRecord(data)
+        except dpkt.NeedData:
+            return
+        except Exception:
+            log.exception("Error reading possible TLS Record")
+            return
+
+        # Is this a valid TLS packet?
+        if record.type not in dpkt.ssl.RECORD_TYPES:
+            return
+
+        try:
+            record = dpkt.ssl.RECORD_TYPES[record.type](record.data)
+        except (dpkt.NeedData, dpkt.ssl.SSL3Exception):
+            return
+
+        # Is this a TLSv1 Handshake packet?
+        if not isinstance(record, dpkt.ssl.TLSHandshake):
+            return
+
+        # We're only interested in the TLS Server Hello packets.
+        if not isinstance(record.data, dpkt.ssl.TLSServerHello):
+            return
+
+        # Extract the server random and the session id.
+        self.tls_keys.append(
+            {
+                "server_random": binascii.b2a_hex(record.data.random),
+                "session_id": binascii.b2a_hex(record.data.session_id),
+            }
+        )
+
+    def _reassemble_smtp(self, conn, data):
+        """Reassemble a SMTP flow.
+        @param conn: connection dict.
+        @param data: raw data.
+        """
+        self.smtp_flow.setdefault(conn["dst"], []).append(data)
+
+    def _process_smtp(self):
+        """Process SMTP flow."""
+        # data is list
+        for conn, data in self.smtp_flow.items():
+            # Detect new SMTP flow.
+            if any(b"EHLO" in item or b"HELO" in item for item in data):
+                self.smtp_requests.append({"dst": conn, "raw": convert_to_printable(b"".join(data))})
+
+    def _check_irc(self, tcpdata):
+        """
+        Checks for IRC traffic.
+        @param tcpdata: tcp data flow
+        """
+        try:
+            req = ircMessage()
+        except Exception:
+            return False
+
+        return req.isthereIRC(tcpdata)
+
+    def _add_irc(self, conn, tcpdata):
+        """
+        Adds an IRC communication.
+            @param conn: TCP connection info.
+        @param tcpdata: TCP data in flow
+        """
+
+        if enabled_passlist and conn["src"] in ip_passlist or conn["dst"] in ip_passlist:
+            return False
+
+        try:
+            reqc = ircMessage()
+            reqs = ircMessage()
+            filters_sc = ["266"]
+            client = reqc.getClientMessages(tcpdata)
+            for message in client:
+                message.update(conn)
+            server = reqs.getServerMessagesFilter(tcpdata, filters_sc)
+            for message in server:
+                message.update(conn)
+            self.irc_requests += client + server
+        except Exception:
+            return False
+
+        return True
+
+    def run(self):
+        """Process PCAP.
+        @return: dict with network analysis data.
+        """
+        log = logging.getLogger("Processing.Pcap")
+
+        if not IS_DPKT:
+            log.error("Python DPKT is not installed, aborting PCAP analysis")
+            return self.results
+
+        if not path_exists(self.filepath):
+            log.debug(
+                'The PCAP file does not exist at path "%s". Did you run analysis with live connection? Did you enable pcap in cuscom/conf/routing.conf?',
+                self.filepath,
+            )
+            return self.results
+
+        if os.path.getsize(self.filepath) == 0:
+            log.error('The PCAP file at path "%s" is empty', self.filepath)
+            return self.results
+
+        try:
+            file = open(self.filepath, "rb")
+        except (IOError, OSError):
+            log.error("Unable to open %s", self.filepath)
+            return self.results
+
+        try:
+            if PCAP_TYPE == "pcap":
+                pcap = dpkt.pcap.Reader(file)
+            elif PCAP_TYPE == "pcapng":
+                pcap = dpkt.pcapng.Reader(file)
+            else:
+                return self.results
+        except dpkt.dpkt.NeedData:
+            log.error('Unable to read PCAP file at path "%s"', self.filepath)
+            return self.results
+        except ValueError:
+            log.error('Unable to read PCAP file at path "%s". File is corrupted or wrong format', self.filepath)
+            return self.results
+
+        offset = file.tell()
+        first_ts = None
+        for ts, buf in pcap:
+            if not first_ts:
+                first_ts = ts
+
+            try:
+                ip = iplayer_from_raw(buf, pcap.datalink())
+
+                connection = {}
+                if isinstance(ip, dpkt.ip.IP):
+                    connection["src"] = socket.inet_ntoa(ip.src)
+                    connection["dst"] = socket.inet_ntoa(ip.dst)
+                elif isinstance(ip, dpkt.ip6.IP6):
+                    connection["src"] = socket.inet_ntop(socket.AF_INET6, ip.src)
+                    connection["dst"] = socket.inet_ntop(socket.AF_INET6, ip.dst)
+                else:
+                    offset = file.tell()
+                    continue
+
+                if ip.p == dpkt.ip.IP_PROTO_TCP:
+                    tcp = ip.data
+                    if not isinstance(tcp, dpkt.tcp.TCP):
+                        try:
+                            tcp = dpkt.tcp.TCP(tcp)
+                        except dpkt.UnpackError:
+                            continue
+
+                    connection["sport"] = tcp.sport
+                    connection["dport"] = tcp.dport
+
+                    if tcp.flags & dpkt.tcp.TH_SYN and tcp.flags & dpkt.tcp.TH_ACK:
+                        connection["src"], connection["dst"] = connection["dst"], connection["src"]
+                        connection["sport"], connection["dport"] = connection["dport"], connection["sport"]
+
+                    if tcp.data:
+                        self._tcp_dissect(connection, tcp.data, ts)
+                        src, sport, dst, dport = connection["src"], connection["sport"], connection["dst"], connection["dport"]
+                        if not (
+                                (dst, dport, src, sport) in self.tcp_connections_seen
+                                or (src, sport, dst, dport) in self.tcp_connections_seen
+                        ):
+                            self.tcp_connections.append((src, sport, dst, dport, offset, ts - first_ts))
+                            self.tcp_connections_seen.add((src, sport, dst, dport))
+                        self.alive_hosts[dst, dport] = True
+                    else:
+                        ipconn = (
+                            connection["src"],
+                            tcp.sport,
+                            connection["dst"],
+                            tcp.dport,
+                        )
+                        seqack = self.tcp_connections_dead.get(ipconn)
+                        if seqack == (tcp.seq, tcp.ack):
+                            host = connection["dst"], tcp.dport
+                            self.dead_hosts[host] = self.dead_hosts.get(host, 1) + 1
+
+                        self.tcp_connections_dead[ipconn] = tcp.seq, tcp.ack
+
+                elif ip.p == dpkt.ip.IP_PROTO_UDP:
+                    udp = ip.data
+                    if not isinstance(udp, dpkt.udp.UDP):
+                        udp = dpkt.udp.UDP(udp)
+
+                    connection["sport"] = udp.sport
+                    connection["dport"] = udp.dport
+                    if len(udp.data) > 0:
+                        self._udp_dissect(connection, udp.data, ts)
+
+                    src, sport, dst, dport = connection["src"], connection["sport"], connection["dst"], connection["dport"]
+                    if not (
+                            (dst, dport, src, sport) in self.udp_connections_seen
+                            or (src, sport, dst, dport) in self.udp_connections_seen
+                    ):
+                        self.udp_connections.append((src, sport, dst, dport, offset, ts - first_ts))
+                        self.udp_connections_seen.add((src, sport, dst, dport))
+
+                elif ip.p == dpkt.ip.IP_PROTO_ICMP:
+                    icmp = ip.data
+                    if not isinstance(icmp, dpkt.icmp.ICMP):
+                        icmp = dpkt.icmp.ICMP(icmp)
+
+                    self._icmp_dissect(connection, icmp)
+
+                offset = file.tell()
+                self._add_hosts(connection)
+            except AttributeError:
+                continue
+            except dpkt.dpkt.NeedData:
+                continue
+            except Exception as e:
+                log.exception("Failed to process packet: %s", e)
+
+        file.close()
+
+        # Post processors for reconstructed flows.
+        self._process_smtp()
+
+        # Build results dict.
+        if not self.options.get("sorted", False):
+            self.results["hosts"] = self._enrich_hosts(self.unique_hosts)
+            self.results["domains"] = self.unique_domains
+            self.results["tcp"] = [conn_from_flowtuple(i) for i in self.tcp_connections]
+            self.results["udp"] = [conn_from_flowtuple(i) for i in self.udp_connections]
+            self.results["icmp"] = self.icmp_requests
+            self.results["http"] = list(self.http_requests.values())
+            self.results["dns"] = list(self.dns_requests.values())
+            self.results["smtp"] = self.smtp_requests
+            self.results["irc"] = self.irc_requests
+            self.results["dead_hosts"] = []
+        else:
+            self.results["sorted"] = {}
+            self.results["sorted"]["tcp"] = [conn_from_flowtuple(i) for i in self.tcp_connections]
+            self.results["sorted"]["udp"] = [conn_from_flowtuple(i) for i in self.udp_connections]
+
+            if enabled_passlist:
+                for keyword in ("tcp", "udp"):
+                    for host in self.results["sorted"][keyword]:
+                        for delip in ip_passlist:
+                            if delip in (host["src"], host["dst"]):
+                                self.results["sorted"][keyword].remove(host)
+            return self.results
+
+        # Report each IP/port combination as a dead host if we've had to retry
+        # at least 3 times to connect to it and if no successful connections
+        # were detected throughout the analysis.
+        for (ip, port), count in self.dead_hosts.items():
+            if count < 3 or (ip, port) in self.alive_hosts:
+                continue
+
+            # Report once.
+            if (ip, port) not in self.results["dead_hosts"]:
+                self.results["dead_hosts"].append((ip, port))
+
+        # Remove hosts that have an IP which correlate to a passlisted domain
+        if enabled_passlist:
+            for host in self.results["hosts"]:
+                for delip in ip_passlist:
+                    if delip == host["ip"]:
+                        self.results["hosts"].remove(host)
+
+            for keyword in ("tcp", "udp", "icmp"):
+                for host in self.results[keyword]:
+                    for delip in ip_passlist:
+                        if delip in (host["src"], host["dst"]):
+                            self.results[keyword].remove(host)
+
+        return self.results
+
+
+class Pcap2:
+    """Interpret the PCAP file through the httpreplay library which parses
+    the various protocols, decrypts and decodes them, and then provides us
+    with the high level representation of it."""
+
+    def __init__(self, pcap_path, tlsmaster, network_path):
+        self.pcap_path = pcap_path
+        self.network_path = network_path
+
+        self.handlers = {
+            25: httpreplay.cut.smtp_handler,
+            80: httpreplay.cut.http_handler,
+            443: lambda: httpreplay.cut.https_handler(tlsmaster),
+            465: httpreplay.cut.smtp_handler,
+            587: lambda: httpreplay.cut.smtp_handler(tlsmaster),
+            4443: lambda: httpreplay.cut.https_handler(tlsmaster),
+            8000: httpreplay.cut.http_handler,
+            8080: httpreplay.cut.http_handler,
+            8443: lambda: httpreplay.cut.https_handler(tlsmaster),
+        }
+
+    def run(self):
+        results = {"http_ex": [], "https_ex": [], "smtp_ex": []}
+
+        if not path_exists(self.network_path):
+            path_mkdir(self.network_path, exist_ok=True)
+
+        if not path_exists(self.pcap_path):
+            log.debug('The PCAP file does not exist at path "%s"', self.pcap_path)
+            return {}
+
+        httpreplay_start = profiling.Counter()
+        log.info("starting processing pcap with httpreplay")
+        if os.path.getsize(self.pcap_path) > PCAP_BYTES_HTTPREPLAY_WARN_LIMIT:
+            log.warning("httpreplay processing may timeout due to pcap size")
+
+        r = httpreplay.reader.PcapReader(open(self.pcap_path, "rb"))
+        r.tcp = httpreplay.smegma.TCPPacketStreamer(r, self.handlers)
+
+        try:
+            sorted_r = sorted(r.process(), key=lambda x: x[1])
+        except TypeError as e:
+            log.warning("You running old httpreplay %s: poetry run pip install -U git+https://github.com/CAPESandbox/httpreplay", e)
+            traceback.print_exc()
+            return results
+        except Exception as e:
+            log.error("httpreplay error: %s", e)
+            traceback.print_exc()
+            return results
+
+        for s, ts, protocol, sent, recv in sorted_r:
+            srcip, srcport, dstip, dstport = s
+
+            if enabled_passlist:
+                """
+                if is_safelisted_ip(dstip):
+                    continue
+                """
+                # ToDo rewrite the whole safelists
+                # ip or host
+
+                if dstip in ip_passlist:
+                    continue
+
+                hostname = False
+                if protocol == "smtp":
+                    hostname = sent.hostname
+                elif protocol in ("http", "https"):
+                    hostname = sent.headers.get("host")
+
+                included_to_passlist = False
+                for reject in domain_passlist_re:
+                    if hostname and re.search(reject, hostname):
+                        included_to_passlist = True
+
+                if included_to_passlist:
+                    continue
+
+            if protocol == "smtp":
+                results["smtp_ex"].append(
+                    {
+                        "src": srcip,
+                        "dst": dstip,
+                        "sport": srcport,
+                        "dport": dstport,
+                        "protocol": protocol,
+                        "req": {
+                            "hostname": sent.hostname,
+                            "mail_from": sent.mail_from,
+                            "mail_to": sent.mail_to,
+                            "auth_type": sent.auth_type,
+                            "username": sent.username,
+                            "password": sent.password,
+                            "headers": sent.headers,
+                            "mail_body": sent.message,
+                        },
+                        "resp": {"banner": recv.ready_message},
+                        "first_seen": ts,
+                    }
+                )
+
+            elif protocol in ("http", "https"):
+                response = b""
+                request = b""
+                if isinstance(sent.raw, bytes):
+                    request = sent.raw.split(b"\r\n\r\n", 1)[0]
+                if isinstance(recv.raw, bytes):
+                    response = recv.raw.split(b"\r\n\r\n", 1)[0]
+
+                status = int(getattr(recv, "status", 0))
+                tmp_dict = {
+                    "src": srcip,
+                    "sport": srcport,
+                    "dst": dstip,
+                    "dport": dstport,
+                    "protocol": protocol,
+                    "method": sent.method,
+                    "host": sent.headers.get("host", dstip),
+                    "uri": sent.uri,
+                    "status": status,
+                    # We'll keep these fields here for now.
+                    "request": request,  # .decode("latin-1"),
+                    "response": response,  # .decode("latin-1"),
+                    "first_seen": ts,
+                }
+
+                if status and status not in (301, 302):
+                    if sent.body:
+                        req_md5 = md5(sent.body).hexdigest()
+                        req_sha1 = sha1(sent.body).hexdigest()
+                        req_sha256 = sha256(sent.body).hexdigest()
+
+                        req_path = os.path.join(self.network_path, req_sha256)
+                        _ = path_write_file(req_path, sent.body)
+
+                        # It's not perfect yet, but it'll have to do.
+                        tmp_dict["req"] = {
+                            "path": req_path,
+                            "md5": req_md5,
+                            "sha1": req_sha1,
+                            "sha256": req_sha256,
+                        }
+
+                    if recv.body:
+                        resp_md5 = md5(recv.body).hexdigest()
+                        resp_sha1 = sha1(recv.body).hexdigest()
+                        resp_sha256 = sha256(recv.body).hexdigest()
+                        resp_path = os.path.join(self.network_path, resp_sha256)
+                        _ = path_write_file(resp_path, recv.body)
+                        resp_preview = []
+                        try:
+                            c = 0
+                            for i in range(3):
+                                data = recv.body[c : c + 16]
+                                if not data:
+                                    continue
+                                s1 = " ".join([f"{i:02x}" for i in data])  # hex string
+                                s1 = f"{s1[:23]} {s1[23:]}"  # insert extra space between groups of 8 hex values
+                                s2 = "".join([chr(i) if 32 <= i <= 127 else "." for i in data])  # ascii string; chained comparison
+                                resp_preview.append(f"{i*16:08x}  {s1:<48}  |{s2}|")
+                                c += 16
+                        except Exception as e:
+                            log.info(e)
+
+                        tmp_dict["resp"] = {
+                            "md5": resp_md5,
+                            "sha1": resp_sha1,
+                            "sha256": resp_sha256,
+                            "preview": resp_preview,
+                            "path": resp_path,
+                        }
+
+                results[f"{protocol}_ex"].append(tmp_dict)
+
+        log.info("finished processing pcap with httpreplay")
+        log.debug("httpreplay processing time: %s", (profiling.Counter() - httpreplay_start))
+        return results
+
+
+class NetworkAnalysis(Processing):
+    """Network analysis."""
+
+    key = "network"
+
+    # ToDo map this to suricata.tls.ja
+    def _import_ja3_fprints(self):
+        """
+        open and read ja3 fingerprint json file from:
+        https://github.com/trisulnsm/trisul-scripts/blob/master/lua/frontend_scripts/reassembly/ja3/prints/ja3fingerprint.json
+        :return: dictionary of ja3 fingerprint descreptions
+        """
+        ja3_fprints = {}
+        if path_exists(self.ja3_file):
+            with open(self.ja3_file, "r") as fpfile:
+                for line in fpfile:
+                    try:
+                        ja3 = loads(line)
+                        if "ja3_hash" in ja3 and "desc" in ja3:
+                            ja3_fprints[ja3["ja3_hash"]] = ja3["desc"]
+                    except Exception as e:
+                        log.error(e)
+
+        return ja3_fprints
+
+    def _load_network_map(self) -> Dict:
+        with suppress(Exception):
+            return self.results.get("behavior", {}).get("network_map") or {}
+        return {}
+
+    def _reconstruct_endpoint_map(self, raw_map: Dict[str, List[Dict]]) -> Dict[tuple, List[Dict]]:
+        """
+        Convert JSON-friendly "ip:port" keys back to (ip, int(port)) tuples.
+        """
+        endpoint_map = {}
+        for key, val in raw_map.items():
+            try:
+                ip, port_str = key.rsplit(":", 1)
+                port = int(port_str)
+                endpoint_map[(ip, port)] = val
+            except (ValueError, IndexError):
+                continue
+        return endpoint_map
+
+    def _pick_best(self, candidates: List[Dict]) -> Optional[Dict]:
+        if not candidates:
+            return None
+
+        for c in candidates:
+            if c.get("process_name"):
+                return c
+
+        return candidates[0]
+
+    def _match_dns_process(self, dns_entry: Dict, dns_intents: Dict, max_skew_seconds: float = 10.0) -> Optional[Dict]:
+        """
+        Match a network.dns entry to the closest behavior DNS intent by:
+          - same domain
+          - closest timestamp (if both sides have timestamps)
+
+        Returns process dict or None.
+        """
+        req = _norm_domain(dns_entry.get("request"))
+        if not req:
+            return None
+
+        candidates = dns_intents.get(req) or []
+        if not candidates:
+            return None
+
+        net_ts = dns_entry.get("first_seen")
+        if not isinstance(net_ts, (int, float)):
+            return candidates[0].get("process")
+
+        best = None
+        best_delta = None
+
+        for c in candidates:
+            bts = c.get("ts_epoch")
+            if not isinstance(bts, (int, float)):
+                continue
+
+            delta = abs(net_ts - bts)
+            if best is None or delta < best_delta:
+                best = c
+                best_delta = delta
+
+        if best is not None and best_delta is not None and best_delta <= max_skew_seconds:
+            return best.get("process")
+
+        return candidates[0].get("process")
+
+    def _pcap_first_epoch(self, network: Dict) -> Optional[float]:
+        ts = []
+        for k in ("dns", "http"):
+            for e in network.get(k) or []:
+                v = e.get("first_seen")
+                if isinstance(v, (int, float)):
+                    ts.append(float(v))
+        return min(ts) if ts else None
+
+    def _build_dns_events_rel(self, network: Dict, dns_intents: Dict, max_skew_seconds: float = 10.0) -> List[Dict]:
+        """
+        Returns a list of dns events:
+        [{"t_rel": float, "process": {...}|None, "request": "example.com"}]
+        """
+        out = []
+        first_epoch = self._pcap_first_epoch(network)
+        if first_epoch is None:
+            return out
+
+        for d in network.get("dns") or []:
+            first_seen = d.get("first_seen")
+            if not isinstance(first_seen, (int, float)):
+                continue
+            t_rel = float(first_seen) - float(first_epoch)
+            proc = self._match_dns_process(d, dns_intents, max_skew_seconds=max_skew_seconds)
+            out.append({"t_rel": t_rel, "process": proc, "request": d.get("request")})
+
+        out.sort(key=lambda x: x["t_rel"])
+        return out
+
+    def _nearest_dns_process_by_rel_time(self, dns_events_rel: List[Dict], t_rel: Any, max_skew: float = 5.0) -> Optional[Dict]:
+        if not dns_events_rel or not isinstance(t_rel, (int, float)):
+            return None
+
+        best = None
+        best_delta = None
+        for e in dns_events_rel:
+            delta = abs(e["t_rel"] - float(t_rel))
+            if best is None or delta < best_delta:
+                best = e
+                best_delta = delta
+
+        if best is not None and best_delta is not None and best_delta <= max_skew:
+            return best.get("process")
+        return None
+
+    def _set_proc_fields(self, obj: Dict, proc: Optional[Dict]):
+        """
+        Add process_id/process_name onto an existing network entry.
+        If proc is None, sets them to None (keeps template stable).
+        """
+        if proc:
+            obj["process_id"] = proc.get("process_id")
+            obj["process_name"] = proc.get("process_name")
+        else:
+            obj["process_id"] = None
+            obj["process_name"] = None
+
+    def _process_map(self, network: Dict):
+        net_map = self._load_network_map()
+
+        if not network or not net_map:
+            return
+
+        endpoint_map = self._reconstruct_endpoint_map(net_map.get("endpoint_map", {}))
+        http_host_map = net_map.get("http_host_map", {})
+        dns_intents = net_map.get("dns_intents", {})
+
+        for flow in network.get("tcp") or []:
+            proc = None
+            if flow.get("dst") and flow.get("dport") is not None:
+                proc = self._pick_best(endpoint_map.get((flow["dst"], int(flow["dport"])), []))
+
+            if not proc and flow.get("dst"):
+                proc = self._pick_best(http_host_map.get(flow["dst"], []))
+
+            self._set_proc_fields(flow, proc)
+
+        dns_events_rel = self._build_dns_events_rel(network, dns_intents, max_skew_seconds=10.0)
+        for d in network.get("dns") or []:
+            proc = self._match_dns_process(d, dns_intents, max_skew_seconds=10.0)
+            self._set_proc_fields(d, proc)
+
+        for flow in network.get("udp") or []:
+            proc = None
+            dst = flow.get("dst")
+            dport = flow.get("dport")
+            sport = flow.get("sport")
+
+            if dst and dport is not None:
+                proc = self._pick_best(endpoint_map.get((dst, int(dport)), []))
+
+            if not proc and dst:
+                proc = self._pick_best(http_host_map.get(dst, []))
+
+            if not proc and (dport == 53 or sport == 53):
+                t_rel = flow.get("time")
+                proc = self._nearest_dns_process_by_rel_time(dns_events_rel, t_rel, max_skew=5.0)
+
+            self._set_proc_fields(flow, proc)
+
+        for key in ("http", "http_ex", "https_ex"):
+            for h in network.get(key) or []:
+                proc = None
+
+                host = h.get("host")
+                if isinstance(host, str) and host:
+                    # Normalize key for lookup
+                    norm_host = _norm_domain(host)
+                    if norm_host:
+                        proc = self._pick_best(http_host_map.get(norm_host, []))
+
+                    # Try fallback to IP if host lookup failed or wasn't present,
+                    # but only if original logic supported it.
+                    if not proc and ":" in host:
+                        raw = host.rsplit(":", 1)[0].strip()
+                        norm_raw = _norm_domain(raw)
+                        if norm_raw:
+                            proc = self._pick_best(http_host_map.get(norm_raw, []))
+
+                if not proc:
+                    dst = h.get("dst")
+                    dport = h.get("dport")
+                    if dst and dport is not None:
+                        proc = self._pick_best(endpoint_map.get((dst, int(dport)), []))
+
+                self._set_proc_fields(h, proc)
+
+        # Aggregate process information for the 'hosts' summary
+        ip_to_procs = defaultdict(dict)
+        for flow_type in ("tcp", "udp"):
+            for flow in network.get(flow_type, []):
+                if flow.get("process_id") and flow.get("dst"):
+                    ip_to_procs[flow["dst"]][flow["process_id"]] = flow.get("process_name", "Unknown")
+
+        for host in network.get("hosts", []):
+            procs = ip_to_procs.get(host["ip"])
+            if procs:
+                if len(procs) == 1:
+                    pid, name = list(procs.items())[0]
+                    host["process_id"] = pid
+                    host["process_name"] = name
+                else:
+                    host["process_name"] = ", ".join(f"{name} ({pid})" for pid, name in procs.items())
+                    host["process_id"] = None
+            else:
+                # Fallback: check http_host_map for this IP
+                proc = self._pick_best(http_host_map.get(host["ip"], []))
+                if proc:
+                    host["process_id"] = proc.get("process_id")
+                    host["process_name"] = proc.get("process_name")
+
+    def _merge_behavior_network(self, network):
+        """
+        Merge network events found in behavior logs but missing in PCAP.
+        Marks them with source='behavior'.
+        """
+        net_map = self._load_network_map()
+        if not net_map:
+            return
+
+        # WinHTTP Sessions (behavior-derived URLs)
+        winhttp_sessions = net_map.get("winhttp_sessions")
+        if winhttp_sessions:
+            # Recompute current http host set (includes http/http_ex/https_ex)
+            http_events = (
+                (network.get("http", []) or []) +
+                (network.get("http_ex", []) or []) +
+                (network.get("https_ex", []) or [])
+            )
+
+            existing_hosts = {
+                _norm_domain(h.get("host"))
+                for h in http_events
+                if h.get("host")
+            }
+
+            for p in winhttp_sessions:
+                proc_sessions = (p or {}).get("sessions") or {}
+
+                for host, sessions in proc_sessions.items():
+                    hnorm = _norm_domain(host)
+                    if not hnorm:
+                        continue
+
+                    # Mirror HTTP behavior merge rule: only add if host missing
+                    if hnorm in existing_hosts:
+                        continue
+
+                    if not sessions:
+                        continue
+
+                    # Use first session entry as representative
+                    s0 = sessions[0] or {}
+                    method = s0.get("method") or ""
+                    dport = s0.get("port")
+                    uri = s0.get("uri") or "/"
+                    protocol = s0.get("protocol")
+
+                    entry = {
+                        "host": hnorm,
+                        "dport": dport,
+                        "uri": uri,
+                        "method": method,
+                        "data": s0.get("request"),
+                        "protocol": protocol,
+                        "access_type": s0.get("access_type"),
+                        "proxy_name": s0.get("proxy_name"),
+                        "proxy_bypass": s0.get("proxy_bypass"),
+                        "source": "behavior",
+                        "process_id": p.get("process_id"),
+                        "process_name": p.get("process_name"),
+                    }
+
+                    network.setdefault("http", []).append(entry)
+                    existing_hosts.add(hnorm)
+
+        # DNS
+        dns_intents = net_map.get("dns_intents", {})
+        existing_dns = {_norm_domain(d.get("request")) for d in network.get("dns", []) if d.get("request")}
+
+        for domain, intents in dns_intents.items():
+            if domain not in existing_dns:
+                first_intent = intents[0]
+                proc = first_intent.get("process", {})
+                entry = {
+                    "request": domain,
+                    "answers": [],
+                    "type": "A",
+                    "source": "behavior",
+                    "process_id": proc.get("process_id"),
+                    "process_name": proc.get("process_name"),
+                    "first_seen": first_intent.get("ts_epoch"),
+                }
+                network.setdefault("dns", []).append(entry)
+
+        # HTTP
+        http_host_map = net_map.get("http_host_map", {})
+        http_requests = net_map.get("http_requests", [])
+
+        existing_hosts = set()
+        existing_urls = set()
+        for h in (network.get("http", []) or []) + (network.get("http_ex", []) or []) + (network.get("https_ex", []) or []):
+            host = h.get("host")
+            if host:
+                existing_hosts.add(_norm_domain(host))
+                uri = h.get("uri", "/")
+                # Store simplistic URL representation for deduplication
+                existing_urls.add(f"{host}{uri}")
+
+        # Process full requests from behavior
+        for req in http_requests:
+            url = req.get("url")
+            if not url:
+                continue
+
+            # Parse URL to components
+            try:
+                parsed = urlparse(url)
+                if not parsed.netloc and not parsed.path:
+                    continue
+
+                host = parsed.netloc or req.get("host")
+                # Handle cases where URL might be just a domain or path
+                if not host and url and "." in url and "/" not in url:
+                    host = url
+
+                # Fallback host normalization
+                if not host and req.get("host"):
+                    host = req.get("host")
+
+                path = parsed.path
+                if parsed.query:
+                    path += f"?{parsed.query}"
+                if not path:
+                    path = "/"
+
+                # Check for duplicates
+                url_key = f"{host}{path}"
+                if url_key in existing_urls:
+                    continue
+
+                port = 80
+                if parsed.port:
+                    port = parsed.port
+                elif parsed.scheme == "https":
+                    port = 443
+
+                entry = {
+                    "host": host,
+                    "port": port,
+                    "uri": url,
+                    "path": path,
+                    "method": "GET",
+                    "source": "behavior",
+                    "process_id": req.get("process_id"),
+                    "process_name": req.get("process_name"),
+                    "first_seen": req.get("time"),
+                }
+                network.setdefault("http", []).append(entry)
+                if host:
+                    existing_hosts.add(_norm_domain(host))
+                existing_urls.add(url_key)
+
+            except Exception:
+                log.warning("Failed to parse behavior URL: %s", url)
+
+        # Process host-only map for remaining missing hosts
+        for host, procs in http_host_map.items():
+            if _norm_domain(host) not in existing_hosts:
+                proc = procs[0] if procs else {}
+                entry = {
+                    "host": host,
+                    "port": 80,
+                    "uri": f"http://{host}/",
+                    "path": "/",
+                    "method": "GET",
+                    "source": "behavior",
+                    "process_id": proc.get("process_id"),
+                    "process_name": proc.get("process_name"),
+                }
+                network.setdefault("http", []).append(entry)
+
+        # Connections (TCP/UDP)
+        endpoint_map = self._reconstruct_endpoint_map(net_map.get("endpoint_map", {}))
+
+        existing_endpoints = set()
+        for t in network.get("tcp", []):
+            existing_endpoints.add((t.get("dst"), t.get("dport")))
+        for u in network.get("udp", []):
+            existing_endpoints.add((u.get("dst"), u.get("dport")))
+
+        for (ip, port), procs in endpoint_map.items():
+            if (ip, port) not in existing_endpoints:
+                proc = procs[0] if procs else {}
+                entry = {
+                    "src": "behavior",
+                    "sport": 0,
+                    "dst": ip,
+                    "dport": port,
+                    "source": "behavior",
+                    "process_id": proc.get("process_id"),
+                    "process_name": proc.get("process_name"),
+                }
+                # Heuristic: DNS is usually UDP, HTTP/others usually TCP
+                target_list = "udp" if port == 53 else "tcp"
+                network.setdefault(target_list, []).append(entry)
+
+    def run(self):
+        if not path_exists(self.pcap_path):
+            log.debug('The PCAP file does not exist at path "%s"', self.pcap_path)
+            return {}
+
+        global PCAP_TYPE
+        PCAP_TYPE = check_pcap_file_type(self.pcap_path)
+        self.key = "network"
+        self.ja3_file = self.options.get("ja3_file", os.path.join(CUCKOO_ROOT, "data", "ja3", "ja3fingerprint.json"))
+        if not IS_DPKT:
+            log.error("Python DPKT is not installed, aborting PCAP analysis")
+            return {}
+
+        if os.path.getsize(self.pcap_path) == 0:
+            log.error('The PCAP file at path "%s" is empty', self.pcap_path)
+            return {}
+
+        ja3_fprints = self._import_ja3_fprints()
+
+        results = {"pcap_sha256": File(self.pcap_path).get_sha256()}
+        self.options["sorted"] = False
+        results.update(Pcap(self.pcap_path, ja3_fprints, self.options).run())
+
+        if proc_cfg.network.sort_pcap:
+            sorted_path = self.pcap_path.replace("dump.", "dump_sorted.")
+            sort_pcap(self.pcap_path, sorted_path)
+            if path_exists(sorted_path):
+                results["sorted_pcap_sha256"] = File(sorted_path).get_sha256()
+                self.options["sorted"] = True
+                results.update(Pcap(sorted_path, ja3_fprints, self.options).run())
+
+        if HAVE_HTTPREPLAY:
+            try:
+                tls_master = self.get_tlsmaster()
+                p2 = Pcap2(self.pcap_path, tls_master, self.network_path).run()
+                if any(p2.values()):
+                    results.update(p2)
+            except Exception:
+                log.exception("Error running httpreplay-based PCAP analysis")
+
+        if proc_cfg.network.process_map:
+            self._process_map(results)
+            if proc_cfg.network.merge_behavior_map:
+                self._merge_behavior_network(results)
+
+        return results
+
+    def get_tlsmaster(self):
+        """Obtain the client/server random to TLS master secrets mapping that we have obtained through dynamic analysis."""
+        tlsmaster = {}
+        dump_tls_log = os.path.join(self.analysis_path, "tlsdump", "tlsdump.log")
+        if not path_exists(dump_tls_log):
+            return tlsmaster
+
+        with open(dump_tls_log, "r") as f:
+            for entry in f:
+                try:
+                    for m in re.finditer(
+                        r"client_random:\s*(?P<client_random>[a-f0-9]+)\s*,\s*server_random:\s*(?P<server_random>[a-f0-9]+)\s*,\s*master_secret:\s*(?P<master_secret>[a-f0-9]+)\s*",
+                        entry,
+                        re.I,
+                    ):
+                        try:
+                            client_random = binascii.a2b_hex(m.group("client_random").strip())
+                            server_random = binascii.a2b_hex(m.group("server_random").strip())
+                            master_secret = binascii.a2b_hex(m.group("master_secret").strip())
+                            tlsmaster[client_random, server_random] = master_secret
+                        except Exception as e:
+                            log.warning("Problem dealing with tlsdump error: %s line: %s", e, m.group(0))
+                except Exception as e:
+                    log.warning("Problem dealing with tlsdump error: %s line: %s", e, entry)
+
+        return tlsmaster
+
+
+def iplayer_from_raw(raw, linktype=1):
+    """Converts a raw packet to a dpkt packet regarding of link type.
+    @param raw: raw packet
+    @param linktype: integer describing link type as expected by dpkt
+    """
+    if linktype == 1:  # ethernet
+        pkt = dpkt.ethernet.Ethernet(raw)
+        ip = pkt.data
+    elif linktype == 101:  # raw
+        ip = dpkt.ip.IP(raw)
+    else:
+        raise CuckooProcessingError("unknown PCAP linktype")
+    return ip
+
+
+def conn_from_flowtuple(ft):
+    """Convert the flow tuple into a dictionary (suitable for JSON)"""
+    sip, sport, dip, dport, offset, relts = ft
+    return {"src": sip, "sport": sport, "dst": dip, "dport": dport, "offset": offset, "time": relts}
+
+
+# input_iterator should be a class that also supports writing so we can use it for the temp files
+# this code is mostly taken from some SO post, can't remember the url though
+def batch_sort(input_iterator, output_path, buffer_size=32000, output_class=None):
+    """batch sort helper with temporary files, supports sorting large stuff"""
+    if not output_class:
+        output_class = input_iterator.__class__
+
+    chunks = []
+    try:
+        while True:
+            current_chunk = list(islice(input_iterator, buffer_size))
+            if not current_chunk:
+                break
+            current_chunk.sort()
+            fd, filepath = tempfile.mkstemp()
+            os.close(fd)
+            output_chunk = output_class(filepath)
+            chunks.append(output_chunk)
+
+            for elem in current_chunk:
+                output_chunk.write(elem.obj)
+            output_chunk.close()
+
+        output_file = output_class(output_path)
+        for elem in heapq.merge(*chunks):
+            output_file.write(elem.obj)
+        else:
+            output_file.write()
+        output_file.close()
+    finally:
+        for chunk in chunks:
+            with suppress(Exception):
+                chunk.close()
+                path_delete(chunk.name)
+
+
+# magic
+class SortCap:
+    """SortCap is a wrapper around the packet lib (dpkt) that allows us to sort pcaps
+    together with the batch_sort function above."""
+
+    def __init__(self, path, linktype=1):
+        self.name = path
+        self.linktype = linktype
+        self.fileobj = None
+        self.fd = None
+        self.ctr = 0  # counter to pass through packets without flow info (non-IP)
+        self.conns = set()
+
+    def write(self, p=None):
+        if not self.fileobj:
+            self.fileobj = open(self.name, "wb")
+            if PCAP_TYPE == "pcap":
+                self.fd = dpkt.pcap.Writer(self.fileobj, linktype=self.linktype)
+            elif PCAP_TYPE == "pcapng":
+                self.fd = dpkt.pcapng.Writer(self.fileobj, linktype=self.linktype)
+        if p:
+            self.fd.writepkt(p.raw, p.ts)
+
+    def __iter__(self):
+        if not self.fileobj:
+            self.fileobj = open(self.name, "rb")
+            if PCAP_TYPE == "pcap":
+                self.fd = dpkt.pcap.Reader(self.fileobj)
+            elif PCAP_TYPE == "pcapng":
+                self.fd = dpkt.pcapng.Reader(self.fileobj)
+            self.fditer = iter(self.fd)
+            self.linktype = self.fd.datalink()
+        return self
+
+    def close(self):
+        if self.fileobj:
+            self.fileobj.close()
+        self.fd = None
+        self.fileobj = None
+
+    def __next__(self):
+        rp = next(self.fditer)
+        if rp is None:
+            return None
+        self.ctr += 1
+
+        ts, raw = rp
+        rpkt = Packet(raw, ts)
+
+        sip, dip, sport, dport, proto = flowtuple_from_raw(raw, self.linktype)
+
+        # check other direction of same flow
+        if (dip, sip, dport, sport, proto) in self.conns:
+            flowtuple = (dip, sip, dport, sport, proto)
+        else:
+            flowtuple = (sip, dip, sport, dport, proto)
+
+        self.conns.add(flowtuple)
+        return Keyed((flowtuple, ts, self.ctr), rpkt)
+
+
+def sort_pcap(inpath, outpath):
+    """Use SortCap class together with batch_sort to sort a pcap"""
+    inc = SortCap(inpath)
+    batch_sort(inc, outpath, output_class=lambda path: SortCap(path, linktype=inc.linktype))
+    return 0
+
+
+def flowtuple_from_raw(raw, linktype=1):
+    """Parse a packet from a pcap just enough to gain a flow description tuple"""
+    ip = iplayer_from_raw(raw, linktype)
+
+    if isinstance(ip, dpkt.ip.IP):
+        sip, dip = socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst)
+        proto = ip.p
+        l3 = ip.data
+
+        if proto == dpkt.ip.IP_PROTO_TCP and isinstance(l3, dpkt.tcp.TCP):
+            sport, dport = l3.sport, l3.dport
+
+        elif proto == dpkt.ip.IP_PROTO_UDP and isinstance(l3, dpkt.udp.UDP):
+            sport, dport = l3.sport, l3.dport
+
+        else:
+            sport, dport = 0, 0
+
+    else:
+        sip, dip, proto = "0", "0", -1
+        sport, dport = 0, 0
+
+    flowtuple = (sip, dip, sport, dport, proto)
+    return flowtuple
+
+
+def payload_from_raw(raw, linktype=1):
+    """Get the payload from a packet, the data below TCP/UDP basically"""
+    ip = iplayer_from_raw(raw, linktype)
+    try:
+        return ip.data.data
+    except Exception:
+        return b""
+
+
+def next_connection_packets(piter, linktype=1):
+    """Extract all packets belonging to the same flow from a pcap packet iterator"""
+    first_ft = None
+
+    for _, raw in piter:
+        ft = flowtuple_from_raw(raw, linktype)
+        if not first_ft:
+            first_ft = ft
+
+        sip, dip, sport, dport, proto = ft
+        if first_ft not in (ft, (dip, sip, dport, sport, proto)):
+            break
+
+        yield {
+            "src": sip,
+            "dst": dip,
+            "sport": sport,
+            "dport": dport,
+            "raw": b64encode(payload_from_raw(raw, linktype)).decode(),
+            "direction": first_ft == ft,
+        }
+
+
+def packets_for_stream(fobj, offset):
+    """Open a PCAP, seek to a packet offset, then get all packets belonging to the same connection"""
+    pcap = dpkt.pcap.Reader(fobj)
+    pcapiter = iter(pcap)
+    ts, raw = next(pcapiter)
+
+    fobj.seek(offset)
+    for p in next_connection_packets(pcapiter, linktype=pcap.datalink()):
+        yield p
+
+
+def check_pcap_file_type(filepath):
+    with open(filepath, "rb") as fd:
+        magic_number = fd.read(4)
+        fd.seek(0)
+        magic_number = int.from_bytes(magic_number, byteorder="little")
+
+        if magic_number in (0xA1B2C3D4, 0xD4C3B2A1):
+            return "pcap"
+        elif magic_number == 0x0A0D0D0A:
+            return "pcapng"
+        else:
+            return

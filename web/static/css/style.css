@@ -1,0 +1,607 @@
+html {
+    background: #1c1c1c;
+}
+
+body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    padding-top: 60px;
+    background: #1c1c1c repeat-x;
+}
+
+@page {
+    size: A3;
+    margin: 1cm;
+}
+
+@media (max-width: 979px) {
+    body {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+}
+
+a {
+    color: white;
+}
+
+/* Bootstrap 5: collapse uses .show (not .in) */
+.navbar-collapse.show {
+    display: block !important;
+}
+
+.alert-primary, .alert-info {
+    background-color: #1c1c1c;
+}
+
+.alert-info code {
+    color: white;
+}
+
+.nav-link {
+    padding: .5rem 1rem;
+}
+
+.card-body {
+    padding: 1.0rem;
+}
+
+a:hover {
+    color: #EE1B2F;
+}
+
+.btn-link {
+    color: red;
+}
+
+.btn-link:hover {
+    color: #EE1B2F;
+}
+
+.page-link {
+    background-color: #444;
+}
+
+.page-link:hover {
+    background-color: #EE1B2F;
+}
+
+.page-link-active {
+    background-color: #EE1B2F;
+}
+
+.text-success {
+    color: #62c462 !important;
+}
+
+.text-success:hover {
+    color: #62c462 !important;
+}
+
+.page-item.active .page-link {
+    z-index: 3;
+    color: #fff;
+    background-color: #ee1b2f;
+    border-color: transparent;
+}
+
+footer {
+    background: #292727;
+    margin: 40px 0 0;
+    padding: 20px 0 15px;
+    width: 100%;
+    color: #ccc;
+}
+
+footer a:link, footer a:visited {
+    color: #ccc;
+    text-decoration: none;
+}
+
+footer a:hover {
+    color: #ccc;
+    text-decoration: underline;
+}
+
+#footer-extra {
+    background: #1c1c1c;
+    padding: 10px 0;
+    font-size: 11px;
+    color: #999;
+}
+
+#footer-extra a:link, #footer-extra a:visited {
+    color: #999;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+#footer-extra a:hover {
+    color: #ccc;
+    text-decoration: underline;
+}
+
+.center {
+    text-align: center;
+}
+
+td code {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.content {
+    background-color: #fff;
+    padding: 15px 40px 40px; /* top right/left bottom */
+    border-bottom-left-radius: 15px;
+    border-bottom-right-radius: 15px;
+}
+
+.section-title {
+    border-bottom: 1px solid #eee;
+    margin-bottom: 15px;
+    margin-top: 20px;
+    padding-bottom: 3px;
+}
+
+span.block-title {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+img.opaque {
+    opacity: 0.3;
+    filter: alpha(opacity=30);
+}
+
+img.opaque:hover {
+    opacity: 1.0;
+    filter: alpha(opacity=100);
+}
+
+.gray {
+    color: #666;
+}
+
+.table-centered {
+    margin: 0 auto !important;
+    float: none !important;
+}
+
+.table-bordered tfoot th, .table-bordered tfoot td {
+    border-top: 4px solid #444;
+}
+
+a.tag-label {
+    color: white;
+}
+
+h4, .h4 {
+    font-size: 18px;
+}
+
+.page-header {
+    margin-bottom: 10px;
+}
+
+.filter-box {
+    display: none;
+    padding-top: 15px;
+    height: auto;
+    width: 40%;
+}
+
+td {
+    word-wrap: break-word;
+    word-break: break-all;
+}
+
+.tab-content {
+    margin-top: 25px;
+}
+
+.row-active {
+    background-color: darkred;
+}
+
+pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.extracted-config > table > tbody > tr > td {
+    font-family: monospace;
+    font-size: 87.5%;
+}
+
+.tcp-flow {
+    list-style-type: none;
+}
+
+.tcp-flow li {
+    margin-bottom: 20px;
+}
+
+.tcp-out pre {
+    padding: 0;
+    border: 0;
+    color: #d9534f;
+}
+
+.tcp-in {
+    padding-left: 100px;
+}
+
+.tcp-in pre {
+    padding: 0;
+    border: 0;
+    color: #5bc0de;
+}
+
+.filter-toggle {
+    display: inline-block;
+    cursor: pointer;
+}
+
+/* Windows API categories */
+.filesystem {
+    background-color: #ffe3c5;
+    color: black;
+}
+
+.registry {
+    background-color: #ffc5c5;
+    color: black;
+}
+
+.process {
+    background-color: #c5e0ff;
+    color: black;
+}
+
+.threading {
+    background-color: #d3e0ff;
+    color: black;
+}
+
+.services {
+    background-color: #ccc5ff;
+    color: black;
+}
+
+.device {
+    background-color: #d3c5cc;
+    color: black;
+}
+
+.network {
+    background-color: #d3ffc5;
+    color: black;
+}
+
+.socket {
+    background-color: #d3ffc5;
+    color: black;
+}
+
+.synchronization {
+    background-color: #f9c5ff;
+    color: black;
+}
+
+.browser {
+    background-color: #dfffdf;
+    color: black;
+}
+
+.crypto {
+    background-color: #f0f2c5;
+    color: black;
+}
+
+/* Linux Syscall Categories */
+.kernel {
+    background-color: #ffc5c5;
+    color: black;
+}
+
+.fs {
+    color: black;
+    background-color: #ffe3c5;
+}
+
+.mm {
+    background-color: #d3ffc5;
+    color: black;
+}
+
+.net {
+    background-color: #c5e0ff;
+    color: black;
+}
+
+.ipc {
+    background-color: #d3e0ff;
+    color: black;
+}
+
+.security {
+    background-color: #ccc5ff;
+    color: black;
+}
+
+.drivers {
+    background-color: #d3c5cc;
+    color: black;
+}
+
+.io_uring {
+    background-color: #f9c5ff;
+    color: black;
+}
+
+.block {
+    background-color: #dfffdf;
+    color: black;
+}
+
+.system {
+    background-color: #fffcc5;
+    color: black;
+}
+
+.windows {
+    background-color: #ffc5ee;
+    color: black;
+}
+
+/* Category buttons (base colors) */
+.btn-cat-default {
+    background-color: #696969;
+    color: #000;
+    border-color: #696969;
+}
+
+.btn-cat-filesystem {
+    background-color: #ffe3c5;
+    color: #000;
+    border-color: #ffe3c5;
+}
+
+.btn-cat-registry {
+    background-color: #ffc5c5;
+    color: #000;
+    border-color: #ffc5c5;
+}
+
+.btn-cat-process {
+    background-color: #c5e0ff;
+    color: #000;
+    border-color: #c5e0ff;
+}
+
+.btn-cat-threading {
+    background-color: #d3e0ff;
+    color: #000;
+    border-color: #d3e0ff;
+}
+
+.btn-cat-services {
+    background-color: #ccc5ff;
+    color: #000;
+    border-color: #ccc5ff;
+}
+
+.btn-cat-device {
+    background-color: #d3c5cc;
+    color: #000;
+    border-color: #d3c5cc;
+}
+
+.btn-cat-network {
+    background-color: #d3ffc5;
+    color: #000;
+    border-color: #d3ffc5;
+}
+
+.btn-cat-socket {
+    background-color: #d3ffc5;
+    color: #000;
+    border-color: #d3ffc5;
+}
+
+.btn-cat-synchronization {
+    background-color: #f9c5ff;
+    color: #000;
+    border-color: #f9c5ff;
+}
+
+.btn-cat-browser {
+    background-color: #dfffdf;
+    color: #000;
+    border-color: #dfffdf;
+}
+
+.btn-cat-crypto {
+    background-color: #f0f2c5;
+    color: #000;
+    border-color: #f0f2c5;
+}
+
+.btn-cat-all {
+    background-color: #198754;
+    color: #000;
+    border-color: #198754;
+}
+
+/* Active state border colors (your current behavior) */
+.btn-cat-default.active,
+.btn-cat-default:active,
+.show > .btn-cat-default.dropdown-toggle {
+    border-color: #696969;
+}
+
+.btn-cat-filesystem.active,
+.btn-cat-filesystem:active,
+.show > .btn-cat-filesystem.dropdown-toggle {
+    border-color: #ffe3c5;
+}
+
+.btn-cat-registry.active,
+.btn-cat-registry:active,
+.show > .btn-cat-registry.dropdown-toggle {
+    border-color: #ffc5c5;
+}
+
+.btn-cat-process.active,
+.btn-cat-process:active,
+.show > .btn-cat-process.dropdown-toggle {
+    border-color: #c5e0ff;
+}
+
+.btn-cat-threading.active,
+.btn-cat-threading:active,
+.show > .btn-cat-threading.dropdown-toggle {
+    border-color: #d3e0ff;
+}
+
+.btn-cat-services.active,
+.btn-cat-services:active,
+.show > .btn-cat-services.dropdown-toggle {
+    border-color: #ccc5ff;
+}
+
+.btn-cat-device.active,
+.btn-cat-device:active,
+.show > .btn-cat-device.dropdown-toggle {
+    border-color: #dcd1d6;
+}
+
+.btn-cat-network.active,
+.btn-cat-network:active,
+.show > .btn-cat-network.dropdown-toggle {
+    border-color: #dcffd1;
+}
+
+.btn-cat-socket.active,
+.btn-cat-socket:active,
+.show > .btn-cat-socket.dropdown-toggle {
+    border-color: #dcffd1;
+}
+
+.btn-cat-synchronization.active,
+.btn-cat-synchronization:active,
+.show > .btn-cat-synchronization.dropdown-toggle {
+    border-color: #fad1ff;
+}
+
+.btn-cat-browser.active,
+.btn-cat-browser:active,
+.show > .btn-cat-browser.dropdown-toggle {
+    border-color: #e5ffe5;
+}
+
+.btn-cat-crypto.active,
+.btn-cat-crypto:active,
+.show > .btn-cat-crypto.dropdown-toggle {
+    border-color: #f3f5d1;
+}
+
+.btn-cat-all.active,
+.btn-cat-all:active,
+.show > .btn-cat-all.dropdown-toggle {
+    border-color: #479f76;
+}
+
+/* Make category background apply to table cells in BS5 */
+.table tbody tr.filesystem > td,
+.table tbody tr.filesystem > th,
+.table tbody tr.registry > td,
+.table tbody tr.registry > th,
+.table tbody tr.process > td,
+.table tbody tr.process > th,
+.table tbody tr.threading > td,
+.table tbody tr.threading > th,
+.table tbody tr.services > td,
+.table tbody tr.services > th,
+.table tbody tr.device > td,
+.table tbody tr.device > th,
+.table tbody tr.network > td,
+.table tbody tr.network > th,
+.table tbody tr.socket > td,
+.table tbody tr.socket > th,
+.table tbody tr.synchronization > td,
+.table tbody tr.synchronization > th,
+.table tbody tr.browser > td,
+.table tbody tr.browser > th,
+.table tbody tr.crypto > td,
+.table tbody tr.crypto > th,
+.table tbody tr.kernel > td,
+.table tbody tr.kernel > th,
+.table tbody tr.fs > td,
+.table tbody tr.fs > th,
+.table tbody tr.mm > td,
+.table tbody tr.mm > th,
+.table tbody tr.net > td,
+.table tbody tr.net > th,
+.table tbody tr.ipc > td,
+.table tbody tr.ipc > th,
+.table tbody tr.security > td,
+.table tbody tr.security > th,
+.table tbody tr.drivers > td,
+.table tbody tr.drivers > th,
+.table tbody tr.io_uring > td,
+.table tbody tr.io_uring > th,
+.table tbody tr.block > td,
+.table tbody tr.block > th,
+.table tbody tr.system > td,
+.table tbody tr.system > th,
+.table tbody tr.windows > td,
+.table tbody tr.windows > th {
+    background-color: inherit; /* inherit the TR background-color */
+    color: inherit; /* inherit the TR text color */
+}
+
+/* Hover/focus states */
+.form-control[type="file"]::file-selector-button:hover {
+    background-color: #3f474e;
+}
+
+/* Mid-gray form controls */
+:root {
+    --form-bg: #5c5c5c;
+    --form-border: #666;
+    --form-text: #fff;
+    --form-placeholder: rgba(255, 255, 255, .55);
+}
+
+.form-control,
+.form-select {
+    background-color: var(--form-bg) !important;
+    color: var(--form-text) !important;
+    border-color: var(--form-border) !important;
+}
+
+.form-control::placeholder {
+    color: var(--form-placeholder) !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--form-bg) !important;
+    border-color: #007ABCFF !important;
+    box-shadow: 0 0 0 .25rem rgba(0, 38, 60, 0.25);
+}
+
+/* Global: no underlines anywhere in BS5 UI */
+a, a:hover, a:focus, a:active {
+    text-decoration: none !important;
+}
+
+/* Keep footer behavior only (if you want underline there) */
+footer a:hover,
+#footer-extra a:hover {
+    text-decoration: underline !important;
+}
+

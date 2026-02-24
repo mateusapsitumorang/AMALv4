@@ -1,0 +1,19 @@
+[Unit]
+Description=CAPE
+Documentation=https://github.com/kevoreilly/CAPEv2
+Wants=cape-rooter.service
+After=cape-rooter.service
+
+[Service]
+WorkingDirectory=/opt/CAPEv2/
+ExecStart=/etc/poetry/bin/poetry run python cuckoo.py
+User=cape
+Group=cape
+Restart=always
+RestartSec=5m
+# send SIGKILL if analysis is still ongoing 4m after SIGTERM
+TimeoutStopSec=4m
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

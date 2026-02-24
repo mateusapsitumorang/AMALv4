@@ -1,0 +1,110 @@
+<section id="static_analysis_dotnet" class="mb-4">
+    {% if file.dotnet %}
+    <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary">
+            <h5 class="mb-0 text-white"><i class="fab fa-windows me-2 text-info"></i> .NET Assembly Information</h5>
+        </div>
+        <div class="card-body">
+            {% if file.dotnet.typerefs or file.dotnet.assemblyrefs or file.dotnet.assemblyinfo or file.dotnet.customattrs %}
+                
+                {% if file.dotnet.assemblyinfo %}
+                <div class="mb-4">
+                    <h6 class="text-white border-bottom pb-2 mb-3">Assembly Info</h6>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            <tr>
+                                <th style="width: 20%;">Name</th>
+                                <td>{{file.dotnet.assemblyinfo.name}}</td>
+                            </tr>
+                            <tr>
+                                <th>Version</th>
+                                <td>{{file.dotnet.assemblyinfo.version}}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if file.dotnet.assemblyrefs %}
+                <div class="mb-4">
+                    <h6 class="text-white border-bottom pb-2 mb-3">Assembly References</h6>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Version</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for asm in file.dotnet.assemblyrefs %}
+                                <tr>
+                                    <td>{{asm.name}}</td>
+                                    <td>{{asm.version}}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if file.dotnet.customattrs %}
+                <div class="mb-4">
+                    <h6 class="text-white border-bottom pb-2 mb-3">Custom Attributes</h6>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for attr in file.dotnet.customattrs %}
+                                <tr>
+                                    <td>{{attr.type}}</td>
+                                    <td>{{attr.name}}</td>
+                                    <td class="text-break">{{attr.value}}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if file.dotnet.typerefs %}
+                <div class="mb-4">
+                    <h6 class="text-white border-bottom pb-2 mb-3">Type References</h6>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Assembly</th>
+                                    <th>Type Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for typeref in file.dotnet.typerefs %}
+                                <tr>
+                                    <td>{{typeref.assembly}}</td>
+                                    <td>{{typeref.typename}}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+            {% else %}
+                <div class="text-white-50">No detailed .NET information available.</div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+        <div class="text-white-50">Nothing to display.</div>
+    {% endif %}
+</section>

@@ -1,0 +1,43 @@
+<section id="static_analysis_lnk" class="mb-4">
+    {% if file.lnk %}
+    <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary">
+            <h5 class="mb-0 text-white"><i class="fas fa-link me-2 text-info"></i> LNK Shortcut Information</h5>
+        </div>
+        <div class="card-body">
+            {% if file.lnk.flags %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-sm mb-0">
+                        {% if file.lnk.flags.relapath %}
+                        <tr>
+                            <th style="width: 20%;">Relative Path</th>
+                            <td class="text-break">{{file.lnk.relapath}}</td>
+                        </tr>
+                        {% endif %}
+                        {% if file.lnk.flags.shellidlist %}
+                        <tr>
+                            <th>CMD Line</th>
+                            <td class="text-break">{{file.lnk.cmdline}}</td>
+                        </tr>
+                        {% endif %}
+                        {% if file.lnk.flags.icon %}
+                        <tr>
+                            <th>Icon Path</th>
+                            <td class="text-break">{{file.lnk.icon}}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+            {% elif file.lnk.data %}
+                <div class="alert alert-secondary text-break">
+                    {{file.lnk|force_escape}}
+                </div>
+            {% else %}
+                <div class="text-white-50">Nothing to display.</div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+        <div class="text-white-50">Nothing to display.</div>
+    {% endif %}
+</section>

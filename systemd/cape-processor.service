@@ -1,0 +1,17 @@
+[Unit]
+Description=CAPE report processor
+Documentation=https://github.com/kevoreilly/CAPEv2
+Wants=cape.service
+After=cape-rooter.service
+
+[Service]
+WorkingDirectory=/opt/CAPEv2/utils/
+ExecStart=/etc/poetry/bin/poetry run python process.py -p7 auto -pt 900
+User=cape
+Group=cape
+Restart=always
+RestartSec=5m
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+{% set proctree_details = True %}
+{% include "sections/proctree.html" %}
+<div class="mt-4">
+    <div class="section-title">
+        <h4>Behavioral Analysis</h4>
+    </div>
+
+    {% if results.behavior and results.behavior.anomaly %}
+    <div class="card mt-3">
+        <div class="card-header" id="headingAnomalies">
+            <h5 class="mb-0">
+                <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAnomalies" aria-expanded="true" aria-controls="collapseAnomalies">
+                    Anomalies
+                </button>
+            </h5>
+        </div>
+        <div id="collapseAnomalies" class="collapse show" aria-labelledby="headingAnomalies">
+            <div class="card-body">
+                <ul>
+                    {% for anomaly in results.behavior.anomaly %}
+                    <li><span class="mono">
+                        <b>{{anomaly.category}} {{anomaly.funcname}}</b>
+                        {{anomaly.message}}
+                        (pid={{anomaly.pid}}, process={{anomaly.name}})
+                    </span></li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
