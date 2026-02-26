@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block title %}Submit Sample · CAPE Sandbox{% endblock %}
+{% block page_title %}Submit Sample{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
@@ -1062,7 +1064,7 @@
                                                     {% if config.interactive_desktop %}
                                                     <div class="form-check mb-2">
                                                         <input type="checkbox" class="form-check-input" id="interactive"
-                                                               name="interactive" />
+                                                               name="interactive" checked />
                                                         <label class="form-check-label" for="interactive">Interactive
                                                             Desktop</label>
                                                     </div>

@@ -1,83 +1,129 @@
 {% extends "base.html" %}
+{% block title %}Dashboard · CAPE Sandbox{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
 {% block content %}
 
-{% if report.top_detections %}
-<div class="card bg-dark text-white mb-4 shadow-sm border-secondary">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0"><i class="fas fa-bug me-2 text-danger"></i> Top Detections</h5>
-    </div>
-    <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-center align-items-center">
-            {% for block in report.top_detections %}
-            <a href="/analysis/search/detections:{{block.family}}"
-                class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
-                <span class="badge bg-danger me-2 p-2">{{block.total}}</span>
-                <span class="font-weight-bold" style="font-size: 1rem;"> {{block.family}}</span>
-            </a>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<div class="row mt-4 mb-4">
-    <div class="col-12">
-        <div class="alert alert-primary shadow-sm d-flex align-items-center justify-content-center" style="border: none; color: white;">
-            <i class="fas fa-stopwatch me-3" style="font-size: 1.5rem;"></i>
-            <div class="text-center" style="font-size: 1.1rem;">
-                Estimating ~<b>{{report.estimate_hour}}</b> analysis per hour, <b>{{report.estimate_day}}</b> per day.
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mb-4">
-    <div class="col-md-6 mx-auto">
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="card text-white bg-dark h-100 shadow-sm border-secondary">
-                    <div class="card-body text-center d-flex flex-column justify-content-center align-items-center p-4">
-                        <h2 class="font-weight-bold text-primary mb-0">{{report.total_tasks}}</h2>
-                        <small class="text-white-50 text-uppercase letter-spacing-1">Tasks</small>
-                        <i class="fas fa-tasks fa-lg text-white-50 mt-2"></i>
+<!-- Dashboard Stats Cards -->
+<div class="row g-4 mb-4">
+    <!-- Total Tasks Card -->
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h6 class="text-muted mb-2">Total Tasks</h6>
+                        <h2 class="fw-bold text-primary mb-0">{{report.total_tasks}}</h2>
+                    </div>
+                    <div class="bg-success bg-opacity-10 p-3 rounded">
+                        <i class="fas fa-tasks text-primary fs-4"></i>
                     </div>
                 </div>
+                <small class="text-success">
+                    <i class="fas fa-arrow-up me-1"></i>
+                    Analysis queue
+                </small>
             </div>
-            <div class="col-md-6 mb-3">
-                <div class="card text-white bg-dark h-100 shadow-sm border-secondary">
-                    <div class="card-body text-center d-flex flex-column justify-content-center align-items-center p-4">
-                        <h2 class="font-weight-bold text-success mb-0">{{report.total_samples}}</h2>
-                        <small class="text-white-50 text-uppercase letter-spacing-1">Samples</small>
-                        <i class="fas fa-vial fa-lg text-white-50 mt-2"></i>
+        </div>
+    </div>
+
+    <!-- Total Samples Card -->
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h6 class="text-muted mb-2">Total Samples</h6>
+                        <h2 class="fw-bold text-success mb-0">{{report.total_samples}}</h2>
+                    </div>
+                    <div class="bg-success bg-opacity-10 p-3 rounded">
+                        <i class="fas fa-vial text-success fs-4"></i>
                     </div>
                 </div>
+                <small class="text-muted">
+                    <i class="fas fa-database me-1"></i>
+                    Unique samples
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Per Hour Card -->
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h6 class="text-muted mb-2">Per Hour</h6>
+                        <h2 class="fw-bold text-info mb-0">~{{report.estimate_hour}}</h2>
+                    </div>
+                    <div class="bg-info bg-opacity-10 p-3 rounded">
+                        <i class="fas fa-clock text-info fs-4"></i>
+                    </div>
+                </div>
+                <small class="text-muted">
+                    <i class="fas fa-stopwatch me-1"></i>
+                    Average speed
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Per Day Card -->
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h6 class="text-muted mb-2">Per Day</h6>
+                        <h2 class="fw-bold text-warning mb-0">~{{report.estimate_day}}</h2>
+                    </div>
+                    <div class="bg-warning bg-opacity-10 p-3 rounded">
+                        <i class="fas fa-calendar-day text-warning fs-4"></i>
+                    </div>
+                </div>
+                <small class="text-muted">
+                    <i class="fas fa-chart-line me-1"></i>
+                    Daily estimate
+                </small>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Analysis States Table -->
 <div class="row">
-    <div class="col-md-6 mx-auto">
-        <div class="card bg-dark text-white shadow-sm border-secondary mb-5">
-            <div class="card-header border-secondary bg-transparent text-center">
-                <h5 class="mb-0"><i class="fas fa-chart-bar me-2 text-info"></i> Analysis States</h5>
+    <div class="col-12 col-xl-8 mx-auto">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header border-0 py-3">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                        <i class="fas fa-chart-bar text-primary"></i>
+                    </div>
+                    <h5 class="mb-0 fw-semibold">Analysis States</h5>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover table-striped mb-0">
-                        <thead class="thead-dark">
-                        <tr>
-                            <th class="text-uppercase border-top-0 text-end pe-4" width="50%">Count</th>
-                            <th class="text-uppercase border-top-0 ps-4" width="50%">State</th>
-                        </tr>
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="border-0 py-3 ps-4">State</th>
+                                <th class="border-0 py-3 text-end pe-4">Count</th>
+                            </tr>
                         </thead>
                         <tbody>
-                        {% for state, count in report.states_count.items %}
+                            {% for state, count in report.states_count.items %}
                             <tr>
-                                <td class="text-end pe-4 border-secondary font-weight-bold text-primary">{{count}}</td>
-                                <td class="ps-4 border-secondary">{{state|title}}</td>
+                                <td class="ps-4 py-3">
+                                    <span class="badge bg-success bg-opacity-10 text-primary rounded-pill px-3 py-2">
+                                        {{state|title}}
+                                    </span>
+                                </td>
+                                <td class="pe-4 py-3 text-end">
+                                    <span class="fw-bold text-primary fs-5">{{count}}</span>
+                                </td>
                             </tr>
-                        {% endfor %}
+                            {% endfor %}
                         </tbody>
                     </table>
                 </div>

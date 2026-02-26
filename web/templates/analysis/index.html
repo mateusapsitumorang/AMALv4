@@ -1,41 +1,84 @@
 {% extends "base.html" %}
 {% load analysis_tags %}
+{% block title %}Recent Analysis · CAPE Sandbox{% endblock %}
+{% block page_title %}Recent Analysis{% endblock %}
+{% block extra_head %}
+<style>
+    .analysis-subnav {
+        position: fixed;
+        top: var(--top-header-h, 62px);
+        left: var(--sidebar-width);
+        right: 0;
+        z-index: 1040;
+        background: var(--bg-header);
+        border-bottom: 1px solid var(--border);
+        padding: 0.4rem 1.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        transform: translateY(0);
+        transition: transform 0.25s ease, left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .analysis-subnav.subnav-hidden {
+        transform: translateY(-110%);
+    }
+    .analysis-subnav.sidebar-collapsed {
+        left: var(--sidebar-collapsed-width);
+    }
+    .analysis-subnav .nav-link {
+        color: var(--secondary) !important;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        padding: 0.35rem 0.9rem;
+        transition: all 0.15s ease;
+    }
+    .analysis-subnav .nav-link:hover {
+        color: var(--foreground) !important;
+        background: var(--muted) !important;
+    }
+    .analysis-subnav .nav-link.active {
+        background: var(--primary) !important;
+        color: #fff !important;
+    }
+    .analysis-tab-content {
+        margin-top: 48px; /* compensate for subnav height */
+    }
+</style>
+{% endblock %}
 {% block content %}
 
-<div class="row mb-4">
-    <div class="col-12">
-        <ul class="nav nav-pills nav-fill bg-dark rounded shadow-sm p-1" id="analysisTabs" role="tablist">
-            <li class="nav-item">
-                <a class="nav-link active font-weight-bold" id="files-tab" data-bs-toggle="pill" href="#files"
-                    role="tab" aria-controls="files" aria-selected="true">
-                    <i class="fas fa-file me-2"></i> Files
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link font-weight-bold" id="static-tab" data-bs-toggle="pill" href="#static" role="tab"
-                    aria-controls="static" aria-selected="false">
-                    <i class="fas fa-code me-2"></i> Static
-                </a>
-            </li>
-            {% if config.url_analysis %}
-            <li class="nav-item">
-                <a class="nav-link font-weight-bold" id="urls-tab" data-bs-toggle="pill" href="#urls" role="tab"
-                    aria-controls="urls" aria-selected="false">
-                    <i class="fas fa-link me-2"></i> URLs
-                </a>
-            </li>
-            {% endif %}
-            <li class="nav-item">
-                <a class="nav-link font-weight-bold" id="pcaps-tab" data-bs-toggle="pill" href="#pcaps" role="tab"
-                    aria-controls="pcaps" aria-selected="false">
-                    <i class="fas fa-network-wired me-2"></i> PCAPs
-                </a>
-            </li>
-        </ul>
-    </div>
+<!-- Scroll-aware Sub-Navbar -->
+<div class="analysis-subnav" id="analysisSubnav">
+    <ul class="nav nav-pills" id="analysisTabs" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="files-tab" data-bs-toggle="pill" href="#files"
+                role="tab" aria-controls="files" aria-selected="true">
+                <i class="fas fa-file me-2"></i>Files
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="static-tab" data-bs-toggle="pill" href="#static" role="tab"
+                aria-controls="static" aria-selected="false">
+                <i class="fas fa-code me-2"></i>Static
+            </a>
+        </li>
+        {% if config.url_analysis %}
+        <li class="nav-item">
+            <a class="nav-link" id="urls-tab" data-bs-toggle="pill" href="#urls" role="tab"
+                aria-controls="urls" aria-selected="false">
+                <i class="fas fa-link me-2"></i>URLs
+            </a>
+        </li>
+        {% endif %}
+        <li class="nav-item">
+            <a class="nav-link" id="pcaps-tab" data-bs-toggle="pill" href="#pcaps" role="tab"
+                aria-controls="pcaps" aria-selected="false">
+                <i class="fas fa-network-wired me-2"></i>PCAPs
+            </a>
+        </li>
+    </ul>
 </div>
 
-<div class="tab-content" id="analysisTabContent">
+<div class="tab-content analysis-tab-content" id="analysisTabContent">
     <!-- FILES TAB -->
     <div class="tab-pane fade show active" id="files" role="tabpanel" aria-labelledby="files-tab">
         {% if paging.show_file_next == "show" or paging.show_file_prev == "show" %}
@@ -1027,17 +1070,49 @@
 
 <script>
     $(function () {
-        //for bootstrap 3 use 'shown.bs.tab' instead of 'shown' in the next line
+        const subnav = document.getElementById('analysisSubnav');
+        const sidebar = document.getElementById('sidebar');
+
+        // Sync left position with sidebar collapse state via CSS class
+        function syncSubnav() {
+            if (!subnav) return;
+            const isCollapsed = sidebar && sidebar.classList.contains('collapsed');
+            subnav.classList.toggle('sidebar-collapsed', isCollapsed);
+        }
+        syncSubnav();
+
+        // Listen to our custom sidebar event (fired by toggleSidebarCollapse in header.html)
+        document.addEventListener('sidebarToggled', syncSubnav);
+
+        // Scroll-aware: hide on scroll down, show on scroll up
+        let lastScrollY = window.scrollY;
+        let ticking = false;
+
+        window.addEventListener('scroll', function () {
+            if (!ticking) {
+                window.requestAnimationFrame(function () {
+                    const currentScrollY = window.scrollY;
+                    if (currentScrollY <= 10) {
+                        subnav.classList.remove('subnav-hidden');
+                    } else if (currentScrollY > lastScrollY) {
+                        subnav.classList.add('subnav-hidden');
+                    } else {
+                        subnav.classList.remove('subnav-hidden');
+                    }
+                    lastScrollY = currentScrollY;
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        }, { passive: true });
+
+        // Persist active tab
         $('a[data-bs-toggle="pill"]').on('click', function (e) {
-            //save the latest tab; use cookies if you like 'em better:
             localStorage.setItem('lastTab', $(e.target).attr('href'));
         });
 
-        //go to the latest tab, if it exists:
         var lastTab = localStorage.getItem('lastTab');
-
         if (lastTab) {
-            // make sure it corresponds to a valid tab in this view (e.g. #files, #static)
             var tabLink = $('a[href="' + lastTab + '"]');
             if (tabLink.length) {
                 tabLink.click();
