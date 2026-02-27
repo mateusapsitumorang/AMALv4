@@ -1,0 +1,196 @@
+{{ network.hosts|json_script:"net-hosts-data" }}
+{{ network.dns|json_script:"net-dns-data" }}
+{{ network.tcp|json_script:"net-tcp-data" }}
+{{ network.udp|json_script:"net-udp-data" }}
+
+<div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 text-white"><i class="fas fa-share-alt me-2 text-success"></i> Network Connection Graph</h5>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="badge" style="background:#1a5c1a;border:1px solid #2ecc71;font-size:0.7rem;">Victim</span>
+            <span class="badge" style="background:#5c1a1a;border:1px solid #e74c3c;font-size:0.7rem;">Remote Host</span>
+            <span class="badge" style="background:#1a3a5c;border:1px solid #3498db;font-size:0.7rem;">Domain</span>
+            <button id="net-graph-fit" class="btn btn-sm btn-outline-secondary ms-2">
+                <i class="fas fa-compress-arrows-alt me-1"></i>Fit
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="net-graph-container" style="width:100%;height:580px;background:#0d0d1a;border-radius:0 0 8px 8px;position:relative;">
+            <div id="net-graph-loading" class="d-flex align-items-center justify-content-center h-100 text-secondary">
+                <i class="fas fa-spinner fa-spin me-2"></i> Loading graph…
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    /* Load Vis.js Network only when this tab is first activated */
+    function initGraph() {
+        var container = document.getElementById('net-graph-container');
+        if (container._graphInit) return;   /* prevent re-init on tab re-click */
+        container._graphInit = true;
+
+        if (window.vis && window.vis.Network) {
+            buildGraph();
+        } else {
+            /* load CSS */
+            if (!document.getElementById('vis-css')) {
+                var link = document.createElement('link');
+                link.id  = 'vis-css';
+                link.rel = 'stylesheet';
+                link.href = 'https://cdn.jsdelivr.net/npm/vis-network@9/styles/vis-network.min.css';
+                document.head.appendChild(link);
+            }
+            /* load JS */
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/vis-network@9/standalone/umd/vis-network.min.js';
+            s.onload = buildGraph;
+            document.head.appendChild(s);
+        }
+    }
+
+    /* Trigger when the Graph tab becomes active */
+    var graphTab = document.getElementById('network_graph-tab');
+    if (graphTab) {
+        graphTab.addEventListener('shown.bs.tab', initGraph);
+        /* if tab is somehow already active on page load */
+        if (graphTab.classList.contains('active')) { initGraph(); }
+    }
+
+    document.getElementById('net-graph-fit').addEventListener('click', function () {
+        if (window._netGraphNetwork) window._netGraphNetwork.fit({ animation: true });
+    });
+
+    function parse(id) {
+        try { return JSON.parse(document.getElementById(id).textContent || 'null') || []; }
+        catch (e) { return []; }
+    }
+
+    function buildGraph() {
+        var hosts  = parse('net-hosts-data');
+        var dns    = parse('net-dns-data');
+        var tcp    = parse('net-tcp-data');
+        var udp    = parse('net-udp-data');
+
+        document.getElementById('net-graph-loading').style.display = 'none';
+
+        var nodes = new vis.DataSet();
+        var edges = new vis.DataSet();
+        var seen  = {};
+
+        /* --- Victim node --- */
+        nodes.add({
+            id: 'victim',
+            label: 'Victim',
+            shape: 'ellipse',
+            color: { background: '#1a5c1a', border: '#2ecc71', highlight: { background: '#27ae60', border: '#1abc9c' } },
+            font: { color: '#ffffff', size: 13, bold: true },
+            size: 22
+        });
+
+        /* --- Helper: add host node --- */
+        function addHost(ip) {
+            if (seen[ip]) return;
+            seen[ip] = true;
+            var host = hosts.find(function (h) { return h.ip === ip; }) || {};
+            var label = ip;
+            if (host.country_name) label += '\n' + host.country_name;
+            if (host.asn_name)     label += '\n' + host.asn_name.slice(0, 20);
+            nodes.add({
+                id: 'ip:' + ip,
+                label: label,
+                shape: 'box',
+                color: { background: '#5c1a1a', border: '#e74c3c', highlight: { background: '#c0392b', border: '#e74c3c' } },
+                font: { color: '#ffffff', size: 11 },
+                title: host.hostname ? 'Hostname: ' + host.hostname : ip
+            });
+        }
+
+        /* --- Add all known hosts --- */
+        hosts.forEach(function (h) {
+            if (h.ip && h.ip.slice(0, 7) !== '192.168' && h.ip !== '127.0.0.1') {
+                addHost(h.ip);
+            }
+        });
+
+        /* --- TCP edges --- */
+        var edgeSeen = {};
+        function addEdge(src, dst, label, color) {
+            var key = src + '→' + dst + label;
+            if (edgeSeen[key]) return;
+            edgeSeen[key] = true;
+            edges.add({
+                from: src, to: dst,
+                label: label,
+                arrows: 'to',
+                color: { color: color, highlight: color },
+                font: { color: '#aaaaaa', size: 9, align: 'middle' },
+                smooth: { type: 'dynamic' }
+            });
+        }
+
+        tcp.forEach(function (c) {
+            if (!c.dst) return;
+            addHost(c.dst);
+            addEdge('victim', 'ip:' + c.dst, 'TCP:' + c.dport, '#e74c3c');
+        });
+
+        udp.forEach(function (c) {
+            if (!c.dst) return;
+            addHost(c.dst);
+            addEdge('victim', 'ip:' + c.dst, 'UDP:' + c.dport, '#e67e22');
+        });
+
+        /* --- DNS nodes & edges --- */
+        dns.forEach(function (entry) {
+            var domain = entry.request || entry.hostname || '';
+            if (!domain) return;
+            var domId = 'dom:' + domain;
+            if (!seen[domId]) {
+                seen[domId] = true;
+                nodes.add({
+                    id: domId,
+                    label: domain.length > 30 ? domain.slice(0, 30) + '…' : domain,
+                    shape: 'diamond',
+                    color: { background: '#1a3a5c', border: '#3498db', highlight: { background: '#2980b9', border: '#3498db' } },
+                    font: { color: '#b0c8ff', size: 10 },
+                    title: domain
+                });
+                addEdge('victim', domId, 'DNS', '#3498db');
+            }
+            /* link domain → resolved IPs */
+            (entry.answers || []).forEach(function (ans) {
+                if (ans.type === 'A' && ans.data) {
+                    addHost(ans.data);
+                    addEdge(domId, 'ip:' + ans.data, '', '#27ae60');
+                }
+            });
+        });
+
+        /* --- Render --- */
+        var container = document.getElementById('net-graph-container');
+        var options = {
+            layout:  { improvedLayout: true },
+            physics: {
+                forceAtlas2Based: {
+                    gravitationalConstant: -60,
+                    centralGravity: 0.01,
+                    springLength: 160,
+                    springConstant: 0.04
+                },
+                maxVelocity: 50,
+                solver: 'forceAtlas2Based',
+                timestep: 0.35,
+                stabilization: { iterations: 120 }
+            },
+            interaction: { hover: true, tooltipDelay: 100 },
+            edges: { width: 1.5 },
+            nodes: { borderWidth: 2 }
+        };
+        var network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
+        window._netGraphNetwork = network;
+    }
+}());
+</script>

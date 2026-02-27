@@ -109,6 +109,11 @@
             </li>
             {% endif %}
         {% endif %}
+        <li class="nav-item">
+            <a class="nav-link" id="network_graph-tab" href="#network_graph_tab" data-bs-toggle="tab" role="tab" aria-controls="network_graph_tab" aria-selected="false">
+                <i class="fas fa-project-diagram me-2"></i>Graph
+            </a>
+        </li>
     </ul>
     <div class="tab-content">
         <div class="tab-pane fade show active" id="network_hosts_tab">{% include "analysis/network/_hosts.html" %}</div>
@@ -124,4 +129,5 @@
         <div class="tab-pane fade" id="network_suri_tls_tab">{% include "analysis/network/_suricata_tls.html" %}</div>
         <div class="tab-pane fade" id="network_suri_http_tab">{% include "analysis/network/_suricata_http.html" %}</div>
         <div class="tab-pane fade" id="network_suri_files">{% include "analysis/network/_suricata_files.html" %}</div>
+        <div class="tab-pane fade" id="network_graph_tab">{% include "analysis/network/_graph.html" %}</div>
     </div>
