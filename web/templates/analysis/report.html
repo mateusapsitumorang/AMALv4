@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Analysis Report · CAPE Sandbox{% endblock %}
+{% block title %}Analysis Report · AMALV4 Sandbox{% endblock %}
 {% block page_title %}Analysis Report{% endblock %}
 {% block extra_head %}
 <style>
 .report-subnav {
+    display: flex;
     position: fixed;
     top: var(--top-header-h, 62px);
     left: var(--sidebar-width);
@@ -19,6 +20,7 @@
     white-space: nowrap;
     /* hide scrollbar */
     scrollbar-width: none;
+    scroll-behavior: smooth;
 }
 .report-subnav::-webkit-scrollbar { display: none; }
 .report-subnav.subnav-hidden {
@@ -52,66 +54,6 @@
 .report-tab-content {
     margin-top: 44px;
 }
-</style>
-{% endblock %}
-{% block content %}
-<script>
-$(function() {
-  if (document.referrer === document.URL){
-    $('a[data-bs-toggle="tab"]').on('click', function (e) {
-      localStorage.setItem('lastAnalysisTab', $(e.target).attr('href'));
-    });
-    var lastAnalysisTab = localStorage.getItem('lastAnalysisTab');
-    if (lastAnalysisTab) {
-        $('a[href="'+lastAnalysisTab+'"]').click();
-    }
-  }
-  $('[data-bs-toggle="tabajax"]').click(function(e) {
-    var $this = $(this),
-        url = $(this).attr("data-url");
-    if (typeof url !== "undefined") {
-        var pane = $(this), href = this.hash;
-        $(href).load(url,function(result){
-            pane.tab('show');
-        });
-    } else {
-         $(this).tab('show');
-    }
-    return false;
-    });
-
-  // Scroll-aware subnav
-  var subnav = document.getElementById('reportSubnav');
-  var sidebar = document.getElementById('sidebar');
-  function syncReportSubnav() {
-      if (!subnav) return;
-      subnav.classList.toggle('sidebar-collapsed', !!(sidebar && sidebar.classList.contains('collapsed')));
-  }
-  syncReportSubnav();
-  document.addEventListener('sidebarToggled', syncReportSubnav);
-
-  var lastScrollY = window.scrollY;
-  var ticking = false;
-  window.addEventListener('scroll', function() {
-      if (!ticking) {
-          window.requestAnimationFrame(function() {
-              var cur = window.scrollY;
-              if (cur <= 10) {
-                  subnav.classList.remove('subnav-hidden');
-              } else if (cur > lastScrollY) {
-                  subnav.classList.add('subnav-hidden');
-              } else {
-                  subnav.classList.remove('subnav-hidden');
-              }
-              lastScrollY = cur;
-              ticking = false;
-          });
-          ticking = true;
-      }
-  }, { passive: true });
-});
-</script>
-<style type="text/css">
 .alert-tlp_green {
     background-color: #008000;
     padding: 3px;
@@ -137,6 +79,9 @@ $(function() {
     font-size: 12;
 }
 </style>
+{% endblock %}
+{% block content %}
+
 {% if analysis.info.tlp %}
     {% if analysis.info.tlp == "Red" %}
     <div class="alert alert-tlp_red">
@@ -224,19 +169,6 @@ $(function() {
             </li>
         {% endif %}
     {% endif %}
-    {% if settings.COMMENTS %}
-        <li class="nav-item">
-            {% if analysis.info.comments|length %}
-                <a class="nav-link" id="comments-tab" href="#comments" data-bs-toggle="tab" role="tab" aria-controls="comments" aria-selected="false">
-                    <i class="fas fa-comments me-2"></i>Comments ({{analysis.info.comments|length}})
-                </a>
-            {% else %}
-                <a class="nav-link" id="comments-tab" href="#comments" data-bs-toggle="tab" role="tab" aria-controls="comments" aria-selected="false">
-                    <i class="fas fa-comments me-2"></i>Comments
-                </a>
-            {% endif %}
-        </li>
-    {% endif %}
     {% if analysis.misp %}
         <li class="nav-item">
             <a class="nav-link" id="misp-tab" href="#misp" data-bs-toggle="tab" role="tab" aria-controls="misp" aria-selected="false">
@@ -261,8 +193,21 @@ $(function() {
     {% if analysis.info.category == "file" and analysis.target %}
         <li class="nav-item">
             <a class="nav-link" href="{% url "compare_left" analysis.info.id %}">
-                <i class="fas fa-balance-scale me-2"></i>Compare this analysis to...
+                <i class="fas fa-balance-scale me-2"></i>Compare Analysis
             </a>
+        </li>
+    {% endif %}
+    {% if settings.COMMENTS %}
+        <li class="nav-item">
+            {% if analysis.info.comments|length %}
+                <a class="nav-link" id="comments-tab" href="#comments" data-bs-toggle="tab" role="tab" aria-controls="comments" aria-selected="false">
+                    <i class="fas fa-comments me-2"></i>Forum ({{analysis.info.comments|length}})
+                </a>
+            {% else %}
+                <a class="nav-link" id="comments-tab" href="#comments" data-bs-toggle="tab" role="tab" aria-controls="comments" aria-selected="false">
+                    <i class="fas fa-comments me-2"></i>Forum
+                </a>
+            {% endif %}
         </li>
     {% endif %}
     {% if settings.ADMIN or user.is_staff %}
@@ -349,4 +294,95 @@ $(function() {
     </div>
     {% endif %}
 </div>
+
+<script>
+// Scrollable with mosue
+const scrollContainer = document.querySelector(".report-subnav");
+scrollContainer.addEventListener("wheel", (evt) => {
+    evt.preventDefault();
+    scrollContainer.scrollLeft += evt.deltaY;
+})
+
+$(function() {
+    function showTabElement(tabEl) {
+        if (window.bootstrap && window.bootstrap.Tab) {
+            window.bootstrap.Tab.getOrCreateInstance(tabEl).show();
+            return;
+        }
+        if (typeof $(tabEl).tab === 'function') {
+            $(tabEl).tab('show');
+        }
+    }
+
+  if (document.referrer === document.URL){
+    $('a[data-bs-toggle="tab"]').on('click', function (e) {
+      localStorage.setItem('lastAnalysisTab', $(e.target).attr('href'));
+    });
+    var lastAnalysisTab = localStorage.getItem('lastAnalysisTab');
+    if (lastAnalysisTab) {
+        $('a[href="'+lastAnalysisTab+'"]').click();
+    }
+  }
+  $('[data-bs-toggle="tabajax"]').click(function(e) {
+    var $this = $(this),
+        url = $(this).attr("data-url");
+    if (typeof url !== "undefined") {
+        var pane = this, href = this.hash;
+        var requestUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + '_ts=' + Date.now();
+        $(href).load(requestUrl,function(result){
+            showTabElement(pane);
+        });
+    } else {
+         showTabElement(this);
+    }
+    return false;
+    });
+
+  // Scroll-aware subnav
+  var subnav = document.getElementById('reportSubnav');
+  var sidebar = document.getElementById('sidebar');
+  function syncReportSubnav() {
+      if (!subnav) return;
+      subnav.classList.toggle('sidebar-collapsed', !!(sidebar && sidebar.classList.contains('collapsed')));
+  }
+  syncReportSubnav();
+  document.addEventListener('sidebarToggled', syncReportSubnav);
+
+  var lastScrollY = window.scrollY;
+  var ticking = false;
+  window.addEventListener('scroll', function() {
+      if (!ticking) {
+          window.requestAnimationFrame(function() {
+              var cur = window.scrollY;
+              if (cur <= 10) {
+                  subnav.classList.remove('subnav-hidden');
+              } else if (cur > lastScrollY) {
+                  subnav.classList.add('subnav-hidden');
+              } else {
+                  subnav.classList.remove('subnav-hidden');
+              }
+              lastScrollY = cur;
+              ticking = false;
+          });
+          ticking = true;
+      }
+  }, { passive: true });
+});
+
+// Handle URL hash for comments
+$(document).ready(function() {
+    var hash = window.location.hash;
+    if (hash && hash.startsWith('#comment-')) {
+        // Switch to comments tab
+        $('#comments-tab').click();
+        // Scroll to the comment after a short delay to ensure tab is shown
+        setTimeout(function() {
+            var element = $(hash);
+            if (element.length) {
+                element[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 500);
+    }
+});
+</script>
 {% endblock %}

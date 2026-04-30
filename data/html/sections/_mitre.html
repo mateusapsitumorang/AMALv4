@@ -1,38 +1,44 @@
 {% if results.mitre_attck %}
-<div class="card mt-4">
-    <div class="card-header">
-        <h4>MITRE ATT&CK</h4>
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 text-white"><i class="fas fa-tasks me-2 text-danger"></i> MITRE ATT&CK</h5>
+        <button class="btn btn-sm btn-outline-light collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#mitre_attack" aria-expanded="false">
+            <i class="fas fa-chevron-down text-white-50"></i>
+        </button>
     </div>
-    <div class="card-body">
-        <table class="table table-striped table-bordered">
-            <thead>
-                <tr>
-                    {% for category in results.mitre_attck %}
-                    <th>{{ category }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    {% for category, ttps in results.mitre_attck.items() %}
-                    <td>
-                        <ul style="padding-left: 1rem">
-                            {% for ttp in ttps %}
-                                <li style="margin-bottom: 1rem">
-                                    <a href="https://attack.mitre.org/techniques/{{ttp.t_id}}/" title="{{ttp.description}}"> {{ttp.t_id}}</a> - {{ ttp.ttp_name }}
-                                    <ul>
-                                    {% for signature in ttp.signature %}
-                                        <li>{{signature}}</li>
-                                    {% endfor %}
+    <div id="mitre_attack" class="collapse" aria-labelledby="headingMitre">
+        <div class="table-responsive">
+            <table class="table table-dark table-bordered mb-0" style="table-layout: fixed;">
+                <thead>
+                    <tr>
+                        {% for category in results.mitre_attck %}
+                        <th class="text-center text-white bg-dark border-secondary" style="font-weight:bold;">{{ category }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        {% for category, ttps in results.mitre_attck.items() %}
+                        <td class="align-top">
+                            <ul class="list-unstyled ps-2">
+                                {% for ttp in ttps %}
+                                <li class="mb-3">
+                                    <a href="https://attack.mitre.org/techniques/{{ttp.t_id}}/" title="{{ttp.description}}" class="text-warning" style="font-weight:bold;" target="_blank">{{ttp.t_id}}</a>
+                                    - <span class="text-light">{{ ttp.ttp_name }}</span>
+                                    <ul class="mt-1 text-white-50" style="font-size:0.85rem;">
+                                        {% for signature in ttp.signature %}
+                                        <li><i class="fas fa-check me-1 text-success"></i> {{signature}}</li>
+                                        {% endfor %}
                                     </ul>
                                 </li>
-                            {% endfor %}
-                        </ul>
-                    </td>
-                    {% endfor %}
-                </tr>
-            </tbody>
-        </table>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 {% endif %}

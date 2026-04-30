@@ -19,212 +19,178 @@
 
 function initExamplePlayer(playback_url) {
     "use strict";
-    
-    /**
-     * The URL of the Guacamole session recording which should be played back.
-     *
-     * @constant
-     * @type String
-     */
 
-     var terminal_url = location.origin + "/recordings/playback/recfile/" + playback_url;
-     var RECORDING_URL = terminal_url;
+    var terminal_url = location.origin + "/recordings/playback/recfile/" + playback_url;
+    var RECORDING_URL = terminal_url;
 
-    /**
-     * The element representing the session recording player.
-     *
-     * @type Element
-     */
-    var player = document.getElementById('player');
-
-    /**
-     * The element which will contain the recording display.
-     *
-     * @type Element
-     */
-    var display = document.getElementById('display');
-
-    /**
-     * Play/pause toggle button.
-     *
-     * @type Element
-     */
-    var playPause = document.getElementById('play-pause');
-
-    /**
-     * Button for cancelling in-progress seek operations.
-     *
-     * @type Element
-     */
-    var cancelSeek = document.getElementById('cancel-seek');
-
-    /**
-     * Text status display indicating the current playback position within the
-     * recording.
-     *
-     * @type Element
-     */
-    var position = document.getElementById('position');
-
-    /**
-     * Slider indicating the current playback position within the recording,
-     * and allowing the user to change the playback position.
-     *
-     * @type Element
-     */
+    var player         = document.getElementById('player');
+    var display        = document.getElementById('display');
+    var playPause      = document.getElementById('play-pause');
+    var cancelSeek     = document.getElementById('cancel-seek');
+    var position       = document.getElementById('position');
     var positionSlider = document.getElementById('position-slider');
+    var duration       = document.getElementById('duration');
 
-    /**
-     * Text status display indicating the current length of the recording.
-     *
-     * @type Element
-     */
-    var duration = document.getElementById('duration');
-
-    /**
-     * The tunnel which should be used to download the Guacamole session
-     * recording.
-     *
-     * @type Guacamole.Tunnel
-     */
-    var tunnel = new Guacamole.StaticHTTPTunnel(RECORDING_URL);
-
-    /**
-     * Guacamole.SessionRecording instance to be used to playback the session
-     * recording.
-     *
-     * @type Guacamole.SessionRecording
-     */
-    var recording = new Guacamole.SessionRecording(tunnel);
-
-    /**
-     * The Guacamole.Display which displays the recording during playback.
-     *
-     * @type Guacamole.Display
-     */
+    var tunnel           = new Guacamole.StaticHTTPTunnel(RECORDING_URL);
+    var recording        = new Guacamole.SessionRecording(tunnel);
     var recordingDisplay = recording.getDisplay();
 
-    /**
-     * Converts the given number to a string, adding leading zeroes as necessary
-     * to reach a specific minimum length.
-     *
-     * @param {Numer} num
-     *     The number to convert to a string.
-     *
-     * @param {Number} minLength
-     *     The minimum length of the resulting string, in characters.
-     *
-     * @returns {String}
-     *     A string representation of the given number, with leading zeroes
-     *     added as necessary to reach the specified minimum length.
-     */
-    var zeroPad = function zeroPad(num, minLength) {
+    /* ── Blur backdrop ────────────────────────────────────────────────────── */
 
-        // Convert provided number to string
+    var bgCanvas  = null;
+    var bgCtx     = null;
+    var rafHandle = null;
+    var isPlaying = false;
+
+    /**
+     * DOM structure setelah init:
+     *
+     * #display  (flex, center)
+     *   ├── canvas.bg-blur-canvas   ← z-index: 1, position: absolute  (BLUR)
+     *   └── div (guacamole element) ← z-index: 2, position: relative   (VIDEO)
+     *         └── canvas            ← canvas Guacamole
+     */
+    function setupBlurBackdrop() {
+        // Guacamole display element
+        var guacDiv = recordingDisplay.getElement();
+
+        // Grab the original canvas from inside the guacamole div
+        var mainCanvas = guacDiv.querySelector('canvas');
+        if (!mainCanvas) {
+            // Canvas belum tentu ada saat ini — coba lagi sebentar
+            setTimeout(setupBlurBackdrop, 200);
+            return;
+        }
+
+        // Create a blur canvas with the same dimensions as the Guacamole canvas
+        bgCanvas        = document.createElement('canvas');
+        bgCanvas.className = 'bg-blur-canvas';
+        bgCanvas.width  = mainCanvas.width  || 1280;
+        bgCanvas.height = mainCanvas.height || 720;
+        bgCtx = bgCanvas.getContext('2d');
+
+        // Insert as the FIRST child of #display (before gua Div) 
+        // → bg Canvas = absolute layer behind 
+        // → guacDiv = relative layer in front (flex‑centered)
+        display.insertBefore(bgCanvas, guacDiv);
+
+        // Sync dimensions if Guacamole resizes its canvas
+        var resizeObserver = new MutationObserver(function () {
+            if (!bgCanvas || !mainCanvas) return;
+            bgCanvas.width  = mainCanvas.width;
+            bgCanvas.height = mainCanvas.height;
+        });
+        resizeObserver.observe(mainCanvas, {
+            attributes: true,
+            attributeFilter: ['width', 'height']
+        });
+    }
+
+    /** Copy frames from Guacamole canvas to blur canvas each animation frame */
+    function startBlurSync() {
+        if (rafHandle) return;
+
+        function sync() {
+            var guacDiv    = recordingDisplay.getElement();
+            var mainCanvas = guacDiv ? guacDiv.querySelector('canvas') : null;
+
+            if (bgCtx && mainCanvas && mainCanvas.width > 0) {
+                try {
+                    bgCtx.drawImage(mainCanvas, 0, 0, bgCanvas.width, bgCanvas.height);
+                } catch (e) { /* skip tainted canvas */ }
+            }
+            rafHandle = requestAnimationFrame(sync);
+        }
+        rafHandle = requestAnimationFrame(sync);
+    }
+
+    function stopBlurSync() {
+        if (rafHandle) {
+            cancelAnimationFrame(rafHandle);
+            rafHandle = null;
+        }
+    }
+
+    /* ── Helpers ──────────────────────────────────────────────────────────── */
+
+    function zeroPad(num, minLength) {
         var str = num.toString();
-
-        // Add leading zeroes until string is long enough
-        while (str.length < minLength)
-            str = '0' + str;
-
+        while (str.length < minLength) str = '0' + str;
         return str;
+    }
 
-    };
-
-    /**
-     * Converts the given millisecond timestamp into a human-readable string in
-     * MM:SS format.
-     *
-     * @param {Number} millis
-     *     An arbitrary timestamp, in milliseconds.
-     *
-     * @returns {String}
-     *     A human-readable string representation of the given timestamp, in
-     *     MM:SS format.
-     */
-    var formatTime = function formatTime(millis) {
-
-        // Calculate total number of whole seconds
+    function formatTime(millis) {
         var totalSeconds = Math.floor(millis / 1000);
-
-        // Split into seconds and minutes
         var seconds = totalSeconds % 60;
         var minutes = Math.floor(totalSeconds / 60);
-
-        // Format seconds and minutes as MM:SS
         return zeroPad(minutes, 2) + ':' + zeroPad(seconds, 2);
+    }
 
-    };
+    /* ── Init ─────────────────────────────────────────────────────────────── */
 
-    // Add playback display to DOM
+    // Add Guacamole display element to #display
     display.appendChild(recordingDisplay.getElement());
 
-    // Begin downloading the recording
+    // Start downloading recording
     recording.connect();
 
-    // If playing, the play/pause button should read "Pause"
-    recording.onplay = function() {
+    // Setup blur backdrop after canvas is in DOM
+    setTimeout(setupBlurBackdrop, 300);
+
+    /* ── Callbacks ────────────────────────────────────────────────────────── */
+
+    recording.onplay = function () {
         playPause.textContent = 'Pause';
+        isPlaying = true;
+        startBlurSync();
     };
 
-    // If paused, the play/pause button should read "Play"
-    recording.onpause = function() {
+    recording.onpause = function () {
         playPause.textContent = 'Play';
+        isPlaying = false;
+        setTimeout(function () {
+            if (!isPlaying) stopBlurSync();
+        }, 400);
     };
 
-    // Toggle play/pause when display or button are clicked
-    display.onclick = playPause.onclick = function() {
+    display.onclick = playPause.onclick = function () {
         if (!recording.isPlaying())
             recording.play();
         else
             recording.pause();
     };
 
-    // Resume playback when cancel button is clicked
-    cancelSeek.onclick = function cancelSeekOperation(e) {
+    cancelSeek.onclick = function (e) {
         recording.play();
         player.className = '';
         e.stopPropagation();
     };
 
-    // Fit display within containing div
-    recordingDisplay.onresize = function displayResized(width, height) {
+    recordingDisplay.onresize = function (width, height) {
+        if (!width || !height) return;
 
-        // Do not scale if display has no width
-        if (!width)
-            return;
+        // Scale to CONTAIN — ambil rasio terkecil antara width & height
+        var scaleX = display.offsetWidth  / width;
+        var scaleY = display.offsetHeight / height;
+        var scale  = Math.min(scaleX, scaleY);
 
-        // Scale display to fit width of container
-        recordingDisplay.scale(display.offsetWidth / width);
-
+        recordingDisplay.scale(scale);
     };
 
-    // Update slider and status when playback position changes
-    recording.onseek = function positionChanged(millis) {
+    recording.onseek = function (millis) {
         position.textContent = formatTime(millis);
         positionSlider.value = millis;
     };
 
-    // Update slider and status when duration changes
-    recording.onprogress = function durationChanged(millis) {
+    recording.onprogress = function (millis) {
         duration.textContent = formatTime(millis);
-        positionSlider.max = millis;
+        positionSlider.max   = millis;
     };
 
-    // Seek within recording if slider is moved
-    positionSlider.onchange = function sliderPositionChanged() {
-
-        // Seek is in progress
+    positionSlider.onchange = function () {
         player.className = 'seeking';
-
-        // Request seek
-        recording.seek(positionSlider.value, function seekComplete() {
-
-            // Seek has completed
+        recording.seek(positionSlider.value, function () {
             player.className = '';
-
         });
-
     };
-
 }

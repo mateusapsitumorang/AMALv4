@@ -1,30 +1,31 @@
-<div class="mt-4">
-    <div class="card">
-        <div class="card-header">
-            <h4>File Details
-            {% if results.info.parent_sample %}
-                <button class="btn btn-secondary btn-sm float-end" type="button" data-bs-toggle="collapse" data-bs-target="#static_parent_file_collapse" aria-expanded="false" aria-controls="static_parent_file_collapse">
-                    <span class="fas fa-envelope-open-text"></span> Parent file
-                </button>
-            {% endif %}
-            </h4>
-        </div>
-        <div class="card-body">
-            {% set tab_name = 'static' %}
-            {% if results.target.file %}
-                {% set file = results.target.file %}
-                {% include "generic/_file_info.html" %}
-            {% endif %}
-
-            {% if results.info.parent_sample %}
-            <div id="static_parent_file_collapse" class="collapse mt-3">
-                {% for _file_item in results.info.parent_sample|parentfixup|dict2list %}
-                    {% set file = _file_item %}
-                    {% set tab_name = 'static' %}
-                    {% include "generic/_file_info.html" %}
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
+<section id="file-details" class="mb-4">
+  <div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+      <h5 class="mb-0 text-white"><i class="fas fa-file-alt me-2 text-info"></i> File Details</h5>
+      {% if results.info.parent_sample %}
+        <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#static_parent_file_collapse" aria-expanded="false">
+          <i class="fas fa-level-up-alt me-1"></i> Show Parent File
+        </button>
+      {% endif %}
     </div>
-</div>
+    <div class="card-body">
+      {% if results.info.parent_sample %}
+      <div id="static_parent_file_collapse" class="collapse mb-3">
+        <div class="card card-body bg-dark">
+          <h6 class="text-white border-bottom pb-2 mb-3">Parent File Info</h6>
+          {% for _file_item in results.info.parent_sample|parentfixup|dict2list %}
+            {% set file = _file_item %}
+            {% set tab_name = 'static' %}
+            {% include "generic/_file_info.html" %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% set tab_name = 'static' %}
+      {% if results.target.file %}
+        {% set file = results.target.file %}
+        {% include "generic/_file_info.html" %}
+      {% endif %}
+    </div>
+  </div>
+</section>

@@ -1,172 +1,251 @@
 {% load generic_tags %}
 {% load analysis_tags %}
+<style>
+    .detection-link,
+    .detection-link a,
+    a.detection-link {
+        color: #ffffff !important;
+        transition: color 0.2s ease !important;
+        cursor: pointer;
+    }
 
+    .detection-link:hover,
+    .detection-link:active,
+    .detection-link:focus,
+    .detection-link:hover a,
+    .detection-link:active a,
+    .detection-link:focus a,
+    a.detection-link:hover,
+    a.detection-link:active,
+    a.detection-link:focus {
+        color: #000000 !important;
+    }
+</style>
 {{ behavior.processtree|json_script:"proc-tree-data" }}
 
-<div class="card bg-dark border-secondary mb-3">
-    <div class="card-header border-secondary d-flex align-items-center justify-content-between">
+<div class="card bg-dark border-secondary mb-3" id="processTreeCard">
+    <div class="card-header border-secondary d-flex align-items-center justify-content-between"
+        style="background-color: #2a2d3a;">
         <h5 class="mb-0 text-white"><i class="fas fa-sitemap me-2 text-info"></i> Process Tree</h5>
-        <button id="toggleTreeView" class="btn btn-sm btn-outline-info">
-            <i class="fas fa-project-diagram me-1"></i> Visual View
-        </button>
+        <div class="btn-group" role="group">
+            <button id="toggleTreeView" class="btn btn-sm btn-outline-info" title="Toggle between text and visual view">
+                <i class="fas fa-project-diagram me-1"></i> Visual View
+            </button>
+            <button id="resetZoom" class="btn btn-sm btn-outline-info" title="Reset zoom (or double-click)">
+                <i class="fas fa-redo me-1"></i> Reset
+            </button>
+        </div>
     </div>
-    <div class="card-body p-0">
+    <div class="card-body p-0" id="treeCardBody">
 
         <!-- Text tree (default) -->
         <div id="textTree" class="p-3">
             <ul class="list-unstyled mb-0" style="font-family: monospace;">
-            {% for process in behavior.processtree|proctreetolist %}
+                {% for process in behavior.processtree|proctreetolist %}
                 {% if process.startchildren %}
-                  <ul class="ps-4 border-start border-secondary ms-2">
-                {% elif process.endchildren %}
-                  </ul>
+                <ul class="ps-4 border-start border-secondary ms-2">
+                    {% elif process.endchildren %}
+                </ul>
                 {% else %}
-                  <li class="mb-1">
+                <li class="mb-1">
                     <i class="fas fa-angle-right text-secondary me-1" style="font-size:0.7rem;"></i>
-                    <strong><a href="javascript:show_tab('process_{{process.pid}}');" class="text-white">{{process.name}}</a></strong>
+                    <strong><a href="javascript:show_tab('process_{{process.pid}}');"
+                            class="text-white">{{process.name}}</a></strong>
                     <span class="text-secondary ms-1">(PID: {{process.pid}})</span>
                     {% if process.commandline %}
-                        <span class="text-light small ms-2" style="opacity:0.75;">{{ process.commandline }}</span>
+                    <span class="text-light small ms-2" style="opacity:0.75;">{{ process.commandline }}</span>
                     {% endif %}
                     {% if detections2pid|get_detection_by_pid:process.pid %}
-                        <span class="badge bg-danger ms-2">{{ detections2pid|get_detection_by_pid:process.pid }}</span>
-                    {% endif %}
-                  </li>
+                    <span tabindex="0" class="badge p-2 mb-1 shadow-sm detection-link text-decoration-none" style="background-color: var(--error) !important;">
+                        {{ detections2pid|get_detection_by_pid:process.pid }}
+                    </span>
                 {% endif %}
-            {% endfor %}
+                </li>
+                {% endif %}
+                {% endfor %}
             </ul>
         </div>
 
         <!-- Visual tree (hidden by default) -->
-        <div id="visualTree" style="display:none;">
-            <div id="proc-tree-svg" style="width:100%;min-height:460px;overflow:auto;background:#11112a;border-radius:0 0 8px 8px;"></div>
+        <div id="visualTree" style="display:none; position: relative;">
+            <div
+                style="position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 4px; color: #aaa; font-size: 12px;">
+                <div><i class="fas fa-arrows-alt me-1"></i>Drag to pan | Scroll to zoom | Double-click to reset</div>
+            </div>
+            <div id="proc-tree-svg"
+                style="width:100%;height:100%;overflow:auto;background:#11112a;border-radius:0 0 8px 8px;"></div>
         </div>
 
     </div>
 </div>
 
 <script>
-(function () {
-    var btn        = document.getElementById('toggleTreeView');
-    var textTree   = document.getElementById('textTree');
-    var visualTree = document.getElementById('visualTree');
-    var rendered   = false;
+    (function () {
+        var btn = document.getElementById('toggleTreeView');
+        var btnReset = document.getElementById('resetZoom');
+        var card = document.getElementById('processTreeCard');
+        var cardBody = document.getElementById('treeCardBody');
+        var textTree = document.getElementById('textTree');
+        var visualTree = document.getElementById('visualTree');
+        var rendered = false;
+        var isMinimized = false;
 
-    btn.addEventListener('click', function () {
-        var showVisual = textTree.style.display !== 'none';
-        if (showVisual) {
-            textTree.style.display   = 'none';
-            visualTree.style.display = 'block';
-            btn.innerHTML = '<i class="fas fa-list me-1"></i> Text View';
-            if (!rendered) { rendered = true; loadD3ThenRender(); }
-        } else {
-            textTree.style.display   = '';
-            visualTree.style.display = 'none';
-            btn.innerHTML = '<i class="fas fa-project-diagram me-1"></i> Visual View';
-        }
-    });
-
-    function loadD3ThenRender() {
-        if (window.d3) { renderTree(); return; }
-        var s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
-        s.onload = renderTree;
-        document.head.appendChild(s);
-    }
-
-    function renderTree() {
-        var rawData   = JSON.parse(document.getElementById('proc-tree-data').textContent || '[]');
-        var container = document.getElementById('proc-tree-svg');
-        container.innerHTML = '';
-
-        if (!rawData || !rawData.length) {
-            container.innerHTML = '<p class="text-secondary p-4">No process tree data available.</p>';
-            return;
-        }
-
-        /* wrap multiple roots under a virtual root */
-        var rootData = (rawData.length === 1)
-            ? rawData[0]
-            : { name: 'Analysis', pid: null, children: rawData };
-
-        var NW = 200, NH = 54, PAD = 60;
-
-        var hier = d3.hierarchy(rootData, function (d) {
-            return d.children && d.children.length ? d.children : null;
+        btn.addEventListener('click', function () {
+            var showVisual = textTree.style.display !== 'none';
+            if (showVisual) {
+                textTree.style.display = 'none';
+                visualTree.style.display = 'block';
+                btn.innerHTML = '<i class="fas fa-list me-1"></i> Text View';
+                btnReset.classList.remove('d-none');
+                if (!rendered) { rendered = true; loadD3ThenRender(); }
+            } else {
+                textTree.style.display = '';
+                visualTree.style.display = 'none';
+                btn.innerHTML = '<i class="fas fa-project-diagram me-1"></i> Visual View';
+                btnReset.classList.add('d-none');
+            }
         });
-        var treeLayout = d3.tree().nodeSize([NH + 14, NW + 40]);
-        treeLayout(hier);
 
-        var nodes = hier.descendants();
-        var links = hier.links();
-        var xs    = d3.extent(nodes, function (d) { return d.x; });
-        var maxY  = d3.max(nodes,    function (d) { return d.y; });
+        btnReset.addEventListener('click', function () {
+            if (!window.d3 || !window.svg) return;
+            window.svg.transition()
+                .duration(750)
+                .call(window.currentZoom.transform, d3.zoomIdentity.translate(120, -xs[0] + 120));
+        });
 
-        var svgH = (xs[1] - xs[0]) + NH + PAD * 2;
-        var svgW = maxY + NW + PAD * 2;
+        function loadD3ThenRender() {
+            if (window.d3) { renderTree(); return; }
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+            s.onload = renderTree;
+            document.head.appendChild(s);
+        }
 
-        var svg = d3.select(container)
-            .append('svg')
-            .attr('width',  Math.max(svgW, container.clientWidth))
-            .attr('height', svgH)
-            .style('display', 'block');
+        function renderTree() {
+            var rawData = JSON.parse(document.getElementById('proc-tree-data').textContent || '[]');
+            var container = document.getElementById('proc-tree-svg');
+            container.innerHTML = '';
 
-        var g = svg.append('g')
-            .attr('transform', 'translate(' + PAD + ',' + (-xs[0] + PAD) + ')');
+            if (!rawData || !rawData.length) {
+                container.innerHTML = '<p class="text-secondary p-4">No process tree data available.</p>';
+                return;
+            }
 
-        /* links */
-        g.selectAll('.ptlink').data(links).enter().append('path')
-            .attr('fill', 'none')
-            .attr('stroke', '#3a3a6a')
-            .attr('stroke-width', 1.5)
-            .attr('d', d3.linkHorizontal()
-                .x(function (d) { return d.y; })
-                .y(function (d) { return d.x; }));
+            /* wrap multiple roots under a virtual root */
+            var rootData = (rawData.length === 1)
+                ? rawData[0]
+                : { name: 'Analysis', pid: null, children: rawData };
 
-        /* node groups */
-        var node = g.selectAll('.ptnode').data(nodes).enter().append('g')
-            .attr('transform', function (d) { return 'translate(' + d.y + ',' + d.x + ')'; })
-            .style('cursor', function (d) { return d.data.pid ? 'pointer' : 'default'; })
-            .on('click', function (event, d) {
-                if (d.data.pid && typeof show_tab === 'function') {
-                    show_tab('process_' + d.data.pid);
-                }
+            var NW = 200, NH = 54, PAD = 120;
+
+            var hier = d3.hierarchy(rootData, function (d) {
+                return d.children && d.children.length ? d.children : null;
+            });
+            var treeLayout = d3.tree().nodeSize([NH + 14, NW + 40]);
+            treeLayout(hier);
+
+            var nodes = hier.descendants();
+            var links = hier.links();
+            var xs = d3.extent(nodes, function (d) { return d.x; });
+            var maxY = d3.max(nodes, function (d) { return d.y; });
+
+            var svgH = (xs[1] - xs[0]) + NH + PAD * 2;
+            var svgW = maxY + NW + PAD * 2;
+
+            var svg = d3.select(container)
+                .append('svg')
+                .attr('width', Math.max(svgW, container.clientWidth))
+                .attr('height', svgH)
+                .style('display', 'block')
+                .style('cursor', 'grab');
+
+            var g = svg.append('g')
+                .attr('transform', 'translate(' + PAD + ',' + (-xs[0] + PAD) + ')');
+
+            /* links */
+            g.selectAll('.ptlink').data(links).enter().append('path')
+                .attr('fill', 'none')
+                .attr('stroke', '#4a5a8a')
+                .attr('stroke-width', 2)
+                .attr('d', d3.linkHorizontal()
+                    .x(function (d) { return d.y; })
+                    .y(function (d) { return d.x; }));
+
+            /* node groups */
+            var node = g.selectAll('.ptnode').data(nodes).enter().append('g')
+                .attr('transform', function (d) { return 'translate(' + d.y + ',' + d.x + ')'; })
+                .style('cursor', function (d) { return d.data.pid ? 'pointer' : 'default'; })
+                .on('click', function (event, d) {
+                    if (d.data.pid && typeof show_tab === 'function') {
+                        show_tab('process_' + d.data.pid);
+                    }
+                });
+
+            /* box */
+            node.append('rect')
+                .attr('x', -NW / 2).attr('y', -NH / 2)
+                .attr('width', NW).attr('height', NH)
+                .attr('rx', 8)
+                .attr('fill', function (d) {
+                    if (!d.parent) return '#5b3a9e';
+                    if (d.children) return '#2b5aa0';
+                    return '#1e4d7b';
+                })
+                .attr('stroke', function (d) {
+                    if (!d.parent) return '#c084fc';
+                    if (d.children) return '#60a5fa';
+                    return '#3b82f6';
+                })
+                .attr('stroke-width', 2)
+                .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))');
+
+            /* process name */
+            node.append('text')
+                .attr('y', -7).attr('text-anchor', 'middle')
+                .attr('fill', '#f0f4ff').attr('font-size', '12px').attr('font-weight', 'bold')
+                .style('pointer-events', 'none')
+                .text(function (d) {
+                    var n = d.data.name || '';
+                    return n.length > 26 ? n.slice(0, 26) + '…' : n;
+                });
+
+            /* PID */
+            node.append('text')
+                .attr('y', 10).attr('text-anchor', 'middle')
+                .attr('fill', '#9ec4ff').attr('font-size', '10px')
+                .style('pointer-events', 'none')
+                .text(function (d) { return d.data.pid != null ? 'PID ' + d.data.pid : ''; });
+
+            node.filter(function (d) { return d.data.pid != null; })
+                .append('title').text('Click to view process details');
+
+            /* Add zoom and pan functionality */
+            var zoom = d3.zoom()
+                .on('zoom', function (event) {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+
+            /* Store references globally for reset button */
+            window.svg = svg;
+            window.currentZoom = zoom;
+            window.xs = xs;
+
+            /* Reset zoom on double-click */
+            svg.on('dblclick.zoom', function () {
+                svg.transition()
+                    .duration(750)
+                    .call(zoom.transform, d3.zoomIdentity.translate(PAD, -xs[0] + PAD));
             });
 
-        /* box */
-        node.append('rect')
-            .attr('x', -NW / 2).attr('y', -NH / 2)
-            .attr('width', NW).attr('height', NH)
-            .attr('rx', 7)
-            .attr('fill', function (d) {
-                if (!d.parent)  return '#2d0d52';
-                if (d.children) return '#1a3060';
-                return '#0c2440';
-            })
-            .attr('stroke', function (d) {
-                if (!d.parent)  return '#9c5cff';
-                if (d.children) return '#3d6fcc';
-                return '#1a5080';
-            })
-            .attr('stroke-width', 1.5);
-
-        /* process name */
-        node.append('text')
-            .attr('y', -7).attr('text-anchor', 'middle')
-            .attr('fill', '#d0d8ff').attr('font-size', '11px').attr('font-weight', 'bold')
-            .text(function (d) {
-                var n = d.data.name || '';
-                return n.length > 26 ? n.slice(0, 26) + '…' : n;
+            /* Change cursor when dragging */
+            svg.on('mousedown', function () {
+                svg.style('cursor', 'grabbing');
             });
-
-        /* PID */
-        node.append('text')
-            .attr('y', 10).attr('text-anchor', 'middle')
-            .attr('fill', '#7888aa').attr('font-size', '10px')
-            .text(function (d) { return d.data.pid != null ? 'PID ' + d.data.pid : ''; });
-
-        node.filter(function (d) { return d.data.pid != null; })
-            .append('title').text('Click to view process details');
-    }
-}());
+            document.addEventListener('mouseup', function () {
+                svg.style('cursor', 'grab');
+            });
+        }
+    }());
 </script>

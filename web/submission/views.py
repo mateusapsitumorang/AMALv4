@@ -12,7 +12,7 @@ import tempfile
 import textwrap
 from base64 import urlsafe_b64encode
 from contextlib import suppress
-
+import json
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
@@ -284,6 +284,43 @@ def index(request, task_id=None, resubmit_hash=None):
             cape,
         ) = parse_request_arguments(request)
 
+        custom_dict = {}
+
+        if custom:
+            custom_dict["user_input"] = custom
+
+        if request.user and request.user.is_authenticated:
+            custom_dict["submitter"]      = request.user.username
+            custom_dict["submitter_name"] = request.user.get_full_name() or request.user.username
+            custom_dict["email"]          = request.user.email or ""
+
+            if request.user.is_staff or request.user.is_superuser:
+                custom_dict["status"] = "Active · Staff"
+            else:
+                custom_dict["status"] = "Active · User"
+
+            profile = getattr(request.user, "userprofile",
+                    getattr(request.user, "profile", None))
+            org  = getattr(profile, "organization", "") if profile else ""
+            unit = getattr(profile, "unit", getattr(profile, "division", "")) if profile else ""
+            if org:
+                custom_dict["organization"] = str(org)
+            if unit:
+                custom_dict["unit"] = str(unit)
+        else:
+            custom_dict["submitter"]      = ""
+            custom_dict["submitter_name"] = "Anonymous"
+
+
+        custom_string = json.dumps(custom_dict)
+        
+        try:
+            request.POST._mutable = True
+            request.POST['custom'] = custom_string
+            request.POST._mutable = False
+        except AttributeError:
+            request.POST['custom'] = custom_string
+            
         # This is done to remove spaces in options but not breaks custom paths
         options = ",".join(
             "=".join(value.strip() for value in option.split("=", 1)) for option in options.split(",") if option and "=" in option

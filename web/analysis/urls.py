@@ -9,6 +9,14 @@ from analysis import views
 urlpatterns = [
     re_path(r"^$", views.index, name="analysis"),
     re_path(r"^page/(?P<page>\d+)/$", views.index, name="index"),
+    re_path(r"^files-partial/$", views.analysis_files_partial, name="analysis_files_partial"),
+    re_path(r"^files-partial/page/(?P<page>\d+)/$", views.analysis_files_partial, name="analysis_files_partial"),
+    re_path(r"^static-partial/$", views.analysis_static_partial, name="analysis_static_partial"),
+    re_path(r"^static-partial/page/(?P<page>\d+)/$", views.analysis_static_partial, name="analysis_static_partial"),
+    re_path(r"^urls-partial/$", views.analysis_urls_partial, name="analysis_urls_partial"),
+    re_path(r"^urls-partial/page/(?P<page>\d+)/$", views.analysis_urls_partial, name="analysis_urls_partial"),
+    re_path(r"^pcaps-partial/$", views.analysis_pcaps_partial, name="analysis_pcaps_partial"),
+    re_path(r"^pcaps-partial/page/(?P<page>\d+)/$", views.analysis_pcaps_partial, name="analysis_pcaps_partial"),
     re_path(r"^(?P<task_id>\d+)/$", views.report, name="report"),
     re_path(r"^load_files/(?P<task_id>\d+)/(?P<category>\w+)/$", views.load_files, name="load_files"),
     re_path(r"^surialert/(?P<task_id>\d+)/$", views.surialert, name="surialert"),
@@ -44,4 +52,6 @@ urlpatterns = [
     re_path(
         r"^on_demand/(?P<service>[\w\-_]+)/(?P<task_id>\d+)/(?P<category>\w+)/(?P<sha256>\w{64})", views.on_demand, name="on_demand"
     ),
+    re_path(r"^misp/redirect/(?P<event_id>\d+)/$", views.misp_redirect, name="misp_redirect"),
+
 ]

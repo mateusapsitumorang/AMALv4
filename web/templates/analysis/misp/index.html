@@ -1,46 +1,156 @@
-<table class="table table-bordered" style="table-layout: fixed;">
-    <tbody>
-    {% if analysis.misp %}
-        <tr>
-            <td width=80px><strong>Event ID</strong></td>
-            <td width=100px><strong>Date</strong></td>
-            <td><strong>IOCs</strong></td>
-            <td><strong>Description</strong></td>
-            <td width=60px><strong>Level</strong></td>
-        </tr>
-        {% for event in analysis.misp %}
-        <tr>
-               {% if event.url %}
-                    <td><a href="{{event.url}}{{event.eid}}" target="_blank">{{event.eid}}</a></td>
-               {% endif  %}
-               {% if event.date %}
-                   <td>{{event.date}}</td>
-               {% endif %}
-               {% if event.iocs %}
-                   <td>
-                   {% for ioc in event.iocs %}
-                       <li>{{ioc}}</li>
-                   {% endfor %}
-                   </td>
-               {% endif %}
-               {% if event.info %}
-                   <td>{{event.info}}</td>
-               {% endif %}
-               {% if event.level %}
-                   <td><p>
-                        {% if event.level == "4" %}
-                            <span class="badge bg-dark">4</span>
-                        {% elif event.level == "3" %}
-                            <span class="badge bg-success">3</span>
-                        {% elif event.level == "2" %}
-                            <span class="badge bg-warning">2</span>
-                        {% elif event.level == "1"  %}
-                            <span class="badge bg-danger">1</span>
-                        {% endif %}
-                   </td>
-               {% endif %}
-        </tr>
-        {% endfor %}
-    {% endif %}
-    </tbody>
-</table>
+<style>
+.misp-card {
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+.misp-card .card-header {
+    border-radius: 12px 12px 0 0 !important;
+}
+.misp-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+</style>
+
+<div class="card bg-dark border-secondary mb-3 shadow-sm misp-card">
+
+    {# Header #}
+    <div class="card-header border-secondary text-white bg-transparent">
+        <h5 class="mb-0">
+            <img src="/static/img/misp-logo.png" alt="MISP" class="misp-logo me-2">
+            MISP Events
+        </h5>
+    </div>
+
+    <div class="card-body p-0">
+        <table class="table table-bordered mb-0" style="table-layout: fixed; width: 100%;">
+          <tbody>
+          {% if analysis.misp %}
+
+            <tr>
+              <th style="width: 80px;">Event ID</th>
+              <th style="width: 110px;">Date</th>
+              <th style="width: 130px;">Level</th>
+              <th>Description</th>
+              <th style="width: 250px;">Tags</th>
+            </tr>
+
+            {% for event in analysis.misp %}
+
+            <tr>
+              <td>
+                {% if event.url %}
+                 <a href="/analysis/misp/redirect/{{ event.eid }}/" target="_blank" style="font-weight: bold; font-size: 1.1em;">{{ event.eid }}</a>
+                {% endif %}
+              </td>
+              <td>{{ event.date }}</td>
+              <td>
+               {% if event.level == "4" %}
+                <span class="badge" style="background-color: #6c757d; color: #fff;">Undefined</span>
+                {% elif event.level == "3" %}
+                <span class="badge" style="background-color: #198754; color: #fff;">Low</span>
+                {% elif event.level == "2" %}
+                <span class="badge" style="background-color: #fd7e14; color: #fff;">Medium</span>
+                {% elif event.level == "1" %}
+                <span class="badge" style="background-color: #dc3545; color: #fff;">High</span>
+                {% endif %}
+              </td>
+              <td>{{ event.info }}</td>
+              <td>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                {% for tag in event.tags %}
+                  <span class="badge bg-secondary" style="white-space: normal; word-break: break-all; text-align: left;">{{ tag }}</span>
+                {% endfor %}
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td colspan="5" style="border-top: none; padding-top: 4px; padding-bottom: 4px;">
+                <span class="text-muted" style="font-size: 0.85em; font-style: italic;">
+                  <i class="fas fa-info-circle me-1"></i> To view the full details of this event, please click the Event ID above.
+                </span>
+              </td>
+            </tr>
+
+            {% if event.file_hashes %}
+            <tr>
+              <td colspan="5">
+                <strong><i class="fas fa-file-alt me-2 text-info"></i>File Hashes</strong>
+                <table class="table table-sm table-striped mt-2">
+                  <tbody>
+                    {% for key, val in event.file_hashes.items %}
+                    <tr>
+                      <td style="width: 100px;"><code>{{ key }}</code></td>
+                      <td><code>{{ val }}</code></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            {% endif %}
+
+            {% if event.attributes %}
+            <tr>
+              <td colspan="5">
+                <strong><i class="fas fa-list me-2 text-info"></i>Attributes</strong>
+                <table class="table table-sm table-striped mt-2">
+                  <thead>
+                    <tr>
+                      <th style="width: 150px;">Category</th>
+                      <th style="width: 120px;">Type</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for attr in event.attributes|slice:":10" %}
+                    <tr>
+                      <td><span class="badge bg-info" style="color: black !important;">{{ attr.category }}</span></td>
+                      <td><code>{{ attr.type }}</code></td>
+                      <td style="word-break: break-all;"><code>{{ attr.value }}</code></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            {% endif %}
+
+            {% if event.related_events %}
+            <tr>
+              <td colspan="5">
+                <strong><i class="fas fa-project-diagram me-2 text-info"></i>Related Events</strong>
+                <table class="table table-sm table-striped mt-2">
+                  <thead>
+                    <tr>
+                      <th style="width: 80px;">ID</th>
+                      <th style="width: 110px;">Date</th>
+                      <th style="width: 120px;">Org</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for rel in event.related_events|slice:":10" %}
+                    <tr>
+                      <td><a href="/analysis/misp/redirect/{{ rel.id }}/" target="_blank">{{ rel.id }}</a></td>
+                      <td>{{ rel.date }}</td>
+                      <td>{{ rel.org }}</td>
+                      <td>{{ rel.info }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            {% endif %}
+
+            {% endfor %}
+
+          {% endif %}
+          </tbody>
+        </table>
+    </div>
+
+</div>

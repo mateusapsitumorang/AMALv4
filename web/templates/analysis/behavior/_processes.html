@@ -1,4 +1,19 @@
 {% load analysis_tags %}
+<style>
+    .calltable table {
+        font-size: 14px !important;
+    }
+
+    .calltable table td, 
+    .calltable table th {
+        font-size: 11px !important;
+        padding: 4px 8px !important; 
+    }
+
+    .calltable code {
+        font-size: 11px !important;
+    }
+</style>
 <script type="text/javascript">
     function paginationbar(pages, page) {
         if (pages === 0) return "";
@@ -33,6 +48,7 @@
             else {
                 $("#process_" + pid + " ul.pagination").html(paginationbar(parseInt($("#process_" + pid).data("length")), pagenum));
                 $("#process_" + pid + " ul.pagination a").click(function (e) {
+                    e.preventDefault(); 
                     var t = $(e.target);
                     load_chunk(t.parents("#process_" + pid).data("pid"), parseInt(t.text()));
                 });

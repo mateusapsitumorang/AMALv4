@@ -1,0 +1,1045 @@
+{% extends "base.html" %}
+{% block title %}Profile · AMALV4 Sandbox{% endblock %}
+{% block page_title %}Profile{% endblock %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  .profile-wrap {
+    --bg:          #0f1117;
+    --bg-2:        #161822;
+    --bg-3:        #1a1d2b;
+    --border:      #2a2d3a;
+    --border-sub:  #1e2235;
+    --text:        #e4e7ec;
+    --text-mute:   #8b95a5;
+    --text-dim:    #4a5168;
+    --accent:      #6384ff;
+    --accent-glow: rgba(99,132,255,0.15);
+    --accent-hov:  #7c9fff;
+    --green:       #30b22d;
+    --orange:      #fed71f;
+    --danger:      #ed6b60;
+    --purple:      #a371f7;
+    --r:           6px;
+    --r-lg:        12px;
+    --font:        'Sora', sans-serif;
+    --mono:        'JetBrains Mono', monospace;
+    --ease:        0.15s cubic-bezier(0.3,0,0.5,1);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .profile-wrap *, .profile-wrap *::before, .profile-wrap *::after { box-sizing: border-box; }
+
+  .profile-wrap .topbar {
+    border-bottom: 1px solid var(--border-sub);
+    padding: 8px 24px;
+    display: flex; align-items: center; justify-content: flex-end;
+    background: var(--bg);
+  }
+
+  .profile-wrap .page { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+  @media (max-width: 768px) { .profile-wrap .page { padding: 16px 12px 48px; } }
+
+  .profile-wrap .flash {
+    padding: 10px 16px; border-radius: var(--r); margin-bottom: 16px;
+    font-size: 14px; border: 1px solid;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    animation: pflash-in 0.3s ease, pflash-out 0.5s ease 4s forwards;
+  }
+  @keyframes pflash-in  { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pflash-out { from { opacity:1; max-height:60px; margin-bottom:16px; } to { opacity:0; max-height:0; margin-bottom:0; padding:0; } }
+  .profile-wrap .flash.success { background: rgba(48,178,45,0.12);  border-color: rgba(48,178,45,0.4);  color: #30b22d; font-weight:500; }
+  .profile-wrap .flash.error   { background: rgba(237,107,96,0.10); border-color: rgba(237,107,96,0.3); color: var(--danger); }
+  .profile-wrap .flash.warning { background: rgba(254,215,31,0.10); border-color: rgba(254,215,31,0.3); color: #fed71f; }
+  .profile-wrap .flash.info    { background: rgba(99,132,255,0.10); border-color: rgba(99,132,255,0.3); color: var(--accent-hov); }
+  .profile-wrap .flash-close { background:none; border:none; color:inherit; cursor:pointer; font-size:16px; padding:0; opacity:0.6; }
+  .profile-wrap .flash-close:hover { opacity:1; }
+
+  .profile-wrap .hero-card {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: var(--r-lg); overflow: hidden; margin-bottom: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  .profile-wrap .banner-wrap { position: relative; height: 200px; overflow: hidden; cursor: pointer; }
+  @media (min-width: 640px) { .profile-wrap .banner-wrap { height: 240px; } }
+  .profile-wrap .banner-img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transition: transform 0.5s ease, filter 0.3s ease;
+  }
+  .profile-wrap .banner-wrap:hover .banner-img { transform: scale(1.03); filter: brightness(0.45); }
+  .profile-wrap .banner-wrap::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+    height: 100px; background: linear-gradient(to top, var(--bg-2), transparent);
+    pointer-events: none;
+  }
+  .profile-wrap .banner-overlay {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .profile-wrap .banner-wrap:hover .banner-overlay { opacity: 1; }
+  .profile-wrap .banner-action-btn {
+    padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 500;
+    font-family: var(--font); cursor: pointer; display: flex; align-items: center; gap: 7px;
+    backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.2);
+    transition: all 0.2s; color: #fff !important; text-decoration: none !important;
+  }
+  .profile-wrap .banner-action-btn.change { background: rgba(0,0,0,0.65); }
+  .profile-wrap .banner-action-btn.change:hover { background: rgba(99,132,255,0.8); }
+  .profile-wrap .banner-action-btn.remove { background: rgba(237,107,96,0.75); }
+  .profile-wrap .banner-action-btn.remove:hover { background: rgba(237,107,96,0.95); }
+  .profile-wrap .banner-action-btn.remove.hidden { display: none; }
+
+  .profile-wrap .profile-row {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; padding: 0 28px 24px; flex-wrap: wrap;
+  }
+  @media (max-width: 640px) { .profile-wrap .profile-row { padding: 0 16px 20px; } }
+
+  .profile-wrap .avatar-wrap { margin-top: -64px; flex-shrink: 0; position: relative; }
+  .profile-wrap .avatar-ring {
+    width: 128px; height: 128px; border-radius: 50%;
+    background: var(--bg-2); border: 4px solid var(--bg-2);
+    box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0,0,0,0.6);
+    overflow: hidden; position: relative;
+    transition: border-color var(--ease), box-shadow var(--ease);
+    cursor: pointer;
+  }
+  @media (max-width: 640px) { .profile-wrap .avatar-ring { width: 96px; height: 96px; } }
+  .profile-wrap .avatar-ring img,
+  .profile-wrap .avatar-initials {
+    width: 100%; height: 100%; object-fit: cover;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, #6384ff, #a371f7); font-family: var(--font);
+  }
+  .profile-wrap .avatar-overlay {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(15,17,23,0.78);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .profile-wrap .avatar-ring:hover .avatar-overlay { opacity: 1; }
+  .profile-wrap .avatar-overlay .av-change {
+    font-size: 11px; font-weight: 600; color: var(--accent-hov);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer;
+  }
+  .profile-wrap .avatar-overlay .av-change i { font-size: 16px; }
+  .profile-wrap .avatar-overlay .av-sep { width: 60%; height: 1px; background: rgba(255,255,255,0.15); }
+  .profile-wrap .avatar-overlay .av-sep.hidden { display: none; }
+  .profile-wrap .avatar-overlay .av-remove {
+    font-size: 10px; font-weight: 600; color: var(--danger);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    display: flex; align-items: center; gap: 4px;
+    cursor: pointer; padding: 2px 8px; border-radius: 10px; transition: background 0.15s;
+  }
+  .profile-wrap .avatar-overlay .av-remove:hover { background: rgba(237,107,96,0.2); }
+  .profile-wrap .avatar-overlay .av-remove.hidden { display: none; }
+
+  .profile-wrap .online-dot {
+    position: absolute; bottom: 10px; right: 10px;
+    width: 13px; height: 13px;
+    background: var(--green); border-radius: 50%;
+    border: 2px solid var(--bg-2); z-index: 2; pointer-events: none;
+  }
+
+  .profile-wrap .profile-info { flex: 1; min-width: 0; padding-bottom: 4px; }
+  .profile-wrap .profile-name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 2px; color: var(--text); }
+  @media (max-width: 640px) { .profile-wrap .profile-name { font-size: 18px; } }
+  .profile-wrap .profile-handle { font-family: var(--mono); font-size: 14px; color: var(--text-mute); margin-bottom: 10px; }
+  .profile-wrap .profile-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .profile-wrap .tag {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+    background: var(--bg-3); border: 1px solid var(--border-sub);
+    border-radius: 20px; font-size: 12px; font-family: var(--mono); color: var(--text-mute) !important;
+    transition: all var(--ease);
+  }
+  .profile-wrap .tag i { font-size: 10px; color: var(--text-dim); }
+  .profile-wrap .tag:hover { border-color: var(--border); color: var(--text) !important; }
+  .profile-wrap .profile-actions { display: flex; gap: 8px; padding-bottom: 4px; }
+
+  .profile-wrap .stat-bar { display: flex; border-top: 1px solid var(--border-sub); padding: 0 28px; }
+  @media (max-width: 640px) { .profile-wrap .stat-bar { padding: 0 16px; } }
+  .profile-wrap .sbar-item {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    padding: 14px 8px; border-right: 1px solid var(--border-sub);
+    transition: background var(--ease); min-width: 0;
+  }
+  .profile-wrap .sbar-item:last-child { border-right: none; }
+  .profile-wrap .sbar-item:hover { background: rgba(255,255,255,0.025); }
+  .profile-wrap .sbar-dot { width: 6px; height: 6px; border-radius: 50%; margin-bottom: 6px; }
+  .profile-wrap .sbar-num { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--text); letter-spacing: -0.04em; line-height: 1; margin-bottom: 4px; }
+  .profile-wrap .sbar-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); font-family: var(--mono); }
+
+  .profile-wrap .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+  .profile-wrap .tabs::-webkit-scrollbar { display: none; }
+  .profile-wrap .tab-btn {
+    display: flex; align-items: center; gap: 7px; padding: 10px 16px;
+    color: var(--text-mute); font-size: 14px; font-weight: 500;
+    cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent;
+    font-family: var(--font); margin-bottom: -1px;
+    transition: color var(--ease); white-space: nowrap;
+  }
+  .profile-wrap .tab-btn:hover { color: var(--text); }
+  .profile-wrap .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .profile-wrap .panel { display: none; }
+  .profile-wrap .panel.active { display: block; }
+
+  .profile-wrap .p-card {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: var(--r-lg); overflow: hidden; margin-bottom: 16px;
+  }
+  .profile-wrap .c-head {
+    padding: 14px 20px; border-bottom: 1px solid var(--border-sub);
+    background: rgba(0,0,0,0.12);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .profile-wrap .c-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-mute);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .profile-wrap .c-title i { color: var(--text-dim); }
+  .profile-wrap .c-body { padding: 20px; }
+
+  .profile-wrap .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; }
+  .profile-wrap .sum-label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 5px; }
+  .profile-wrap .sum-val { font-size: 15px; font-weight: 600; color: var(--text); }
+  .profile-wrap .sum-val.mono { font-family: var(--mono); font-size: 12px; font-weight: 400; word-break: break-all; }
+  .profile-wrap .sum-val.badge-active {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-family: var(--mono); color: var(--green);
+  }
+  .profile-wrap .sum-val.badge-active::before {
+    content: ''; display: inline-block; width: 7px; height: 7px; background: var(--green); border-radius: 50%;
+  }
+
+  .profile-wrap .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .profile-wrap .fg { grid-template-columns: 1fr; } }
+  .profile-wrap .f-group { display: flex; flex-direction: column; gap: 5px; }
+  .profile-wrap .f-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .profile-wrap .f-input {
+    padding: 7px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--r); color: var(--text);
+    font-size: 14px; font-family: var(--font); width: 100%;
+    transition: border-color var(--ease), box-shadow var(--ease);
+  }
+  .profile-wrap .f-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .profile-wrap .f-input::placeholder { color: var(--text-dim); }
+  .profile-wrap .f-input.mono { font-family: var(--mono); }
+  .profile-wrap .f-pfx-wrap {
+    display: flex; border: 1px solid var(--border); border-radius: var(--r);
+    overflow: hidden; transition: border-color var(--ease), box-shadow var(--ease);
+  }
+  .profile-wrap .f-pfx-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .profile-wrap .f-pfx {
+    padding: 7px 10px; background: var(--bg-3); border-right: 1px solid var(--border);
+    color: var(--text-dim); font-family: var(--mono); font-size: 13px;
+    display: flex; align-items: center; white-space: nowrap;
+  }
+  .profile-wrap .f-pfx-wrap .f-input { border: none; flex: 1; }
+  .profile-wrap .f-pfx-wrap .f-input:focus { box-shadow: none; }
+
+  .profile-wrap .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0; border-bottom: 1px solid var(--border-sub);
+  }
+  .profile-wrap .toggle-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .profile-wrap .toggle-row:first-child { padding-top: 0; }
+  .profile-wrap .toggle-info h4 { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .profile-wrap .toggle-info p  { font-size: 12px; color: var(--text-mute); }
+  .profile-wrap .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+  .profile-wrap .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .profile-wrap .toggle-track {
+    position: absolute; inset: 0; background: var(--bg-3);
+    border: 1px solid var(--border); border-radius: 11px; cursor: pointer; transition: background 0.2s;
+  }
+  .profile-wrap .toggle-track::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; background: var(--text-dim);
+    border-radius: 50%; transition: transform 0.2s, background 0.2s;
+  }
+  .profile-wrap .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+  .profile-wrap .toggle input:checked + .toggle-track::after { transform: translateX(18px); background: #fff; }
+
+  .profile-wrap .p-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px;
+    border-radius: var(--r); font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: all var(--ease); font-family: var(--font);
+    white-space: nowrap; border: 1px solid transparent; text-decoration: none !important;
+  }
+  .profile-wrap .p-btn-green  { background: #1a6b18; color: #fff !important; border-color: rgba(48,178,45,0.3); }
+  .profile-wrap .p-btn-green:hover  { background: #22881f; }
+  .profile-wrap .p-btn-ghost  { background: var(--bg-3); color: var(--text) !important; border-color: var(--border); }
+  .profile-wrap .p-btn-ghost:hover  { border-color: var(--text-mute); }
+  .profile-wrap .p-btn-danger { background: transparent; color: var(--danger) !important; border-color: rgba(237,107,96,0.4); }
+  .profile-wrap .p-btn-danger:hover { background: rgba(237,107,96,0.1); border-color: var(--danger); }
+
+  .profile-wrap .f-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-sub);
+  }
+
+  #p-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    background: #161822; border: 1px solid #2a2d3a; border-radius: 12px;
+    padding: 12px 18px; font-size: 14px; color: #e4e7ec;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    transform: translateY(20px); opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); pointer-events: none;
+    font-family: 'Sora', sans-serif;
+  }
+  #p-toast.show { transform: translateY(0); opacity: 1; }
+  #p-toast i { color: #30b22d; }
+      /* Container bar */
+    .strength-meter {
+      height: 5px;
+      background-color: #eee;
+      margin-top: 10px;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    
+    .strength-meter-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease, background-color 0.3s ease;
+    }
+    
+    .strength-text {
+      font-size: 0.8rem;
+      margin-top: 5px;
+      display: block;
+    }
+    /* Password toggle icon */
+    .password-wrapper {
+      position: relative;
+    }
+    
+    .password-wrapper .toggle-password-icon {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      user-select: none;
+      transition: color 0.3s ease-in;
+    }
+    
+    .password-wrapper .toggle-password-icon:hover {
+      color: #cbd5e1;
+    }
+    
+    .password-wrapper input[type='password'],
+    .password-wrapper input[type='text'] {
+      padding-right: 2.5rem !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-wrap">
+
+  <div class="topbar">
+    <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+      <i class="fas fa-clock" style="margin-right:4px;"></i>
+      last login &nbsp;{{ user.last_login|date:"d M Y · H:i" }}
+    </span>
+  </div>
+
+  <form method="post" action="{% url 'profile_update' %}" enctype="multipart/form-data" id="profileForm">
+  {% csrf_token %}
+  <input type="file" id="avatarInput" name="avatar" accept="image/*" hidden>
+  <input type="file" id="headerInput" name="header" accept="image/*" hidden>
+  <input type="hidden" name="delete_avatar" id="deleteAvatarFlag" value="">
+  <input type="hidden" name="delete_header" id="deleteHeaderFlag" value="">
+
+  <div class="page">
+
+    {% if messages %}
+      {% for msg in messages %}
+        <div class="flash {{ msg.tags }}">
+          <span>
+            <i class="fas fa-{% if 'success' in msg.tags %}check-circle{% elif 'error' in msg.tags %}exclamation-circle{% else %}info-circle{% endif %}" style="margin-right:6px;"></i>
+            {{ msg }}
+          </span>
+          <button type="button" class="flash-close" onclick="this.parentElement.remove()">✕</button>
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <!-- HERO CARD -->
+    <div class="hero-card">
+
+      <div class="banner-wrap">
+        <img class="banner-img" id="headerPreview"
+             src="{% if profile_obj.header %}{{ profile_obj.header.url }}{% else %}{% static 'img/Cover_Photo.png' %}{% endif %}"
+             alt="Cover" onerror="this.src='{% static 'img/Cover_Photo.png' %}'">
+        <div class="banner-overlay">
+          <button type="button" class="banner-action-btn change"
+                  onclick="document.getElementById('headerInput').click()">
+            <i class="fas fa-camera"></i> Change cover
+          </button>
+          <button type="button"
+                  class="banner-action-btn remove{% if not profile_obj.header %} hidden{% endif %}"
+                  id="removeCoverBtn"
+                  onclick="deletePhoto('header')">
+            <i class="fas fa-trash-alt"></i> Remove cover
+          </button>
+        </div>
+      </div>
+
+      <div class="profile-row">
+        <div class="avatar-wrap">
+          <div class="avatar-ring" id="avatarRing">
+            {% if profile_obj.avatar %}
+              <img id="avatarPreview" src="{{ profile_obj.avatar.url }}" alt="{{ user.username }}">
+            {% else %}
+              <div class="avatar-initials" id="avatarInitials">{{ user.username|slice:":2"|upper }}</div>
+            {% endif %}
+            <div class="avatar-overlay">
+              <div class="av-change" onclick="document.getElementById('avatarInput').click()">
+                <i class="fas fa-camera"></i>
+                <span>Change</span>
+              </div>
+              <div class="av-sep{% if not profile_obj.avatar %} hidden{% endif %}" id="avSep"></div>
+              <div class="av-remove{% if not profile_obj.avatar %} hidden{% endif %}"
+                   id="removeAvatarBtn" onclick="deletePhoto('avatar')">
+                <i class="fas fa-times"></i> Remove
+              </div>
+            </div>
+          </div>
+          <div class="online-dot"></div>
+        </div>
+
+        <div class="profile-info">
+          <div id="profileName" class="profile-name">{{ user.get_full_name|default:user.username }}</div>
+          <div class="profile-handle">@{{ user.username }}</div>
+          <div class="profile-tags">
+            {% if profile_obj.organization %}
+              <span class="tag"><i class="fas fa-building"></i> {{ profile_obj.organization }}</span>
+            {% endif %}
+            {% if profile_obj.unit %}
+              <span class="tag"><i class="fas fa-sitemap"></i> {{ profile_obj.unit }}</span>
+            {% endif %}
+            <span class="tag"><i class="fas fa-calendar-alt"></i> Joined {{ user.date_joined|date:"M Y" }}</span>
+          </div>
+        </div>
+
+        <div class="profile-actions">
+          <button type="button" class="p-btn p-btn-ghost" onclick="goToTab('edit')">
+            <i class="fas fa-pen"></i> Edit profile
+          </button>
+        </div>
+      </div>
+
+      <div class="stat-bar">
+        <div class="sbar-item">
+          <div class="sbar-dot" style="background:#6384ff"></div>
+          <div class="sbar-num">{{ total_analyses|default:"0" }}</div>
+          <div class="sbar-lbl">Analyses</div>
+        </div>
+        <div class="sbar-item">
+          <div class="sbar-dot" style="background:#fed71f"></div>
+          <div class="sbar-num">{{ pending_count|default:"0" }}</div>
+          <div class="sbar-lbl">Pending</div>
+        </div>
+        <div class="sbar-item">
+          <div class="sbar-dot" style="background:#a371f7"></div>
+          <div class="sbar-num">{{ submission_count|default:"0" }}</div>
+          <div class="sbar-lbl">Reported</div>
+        </div>
+        <div class="sbar-item">
+          <div class="sbar-dot" style="background:#30b22d"></div>
+          <div class="sbar-num" style="font-size:13px;">{{ user.date_joined|date:"M Y" }}</div>
+          <div class="sbar-lbl">Member since</div>
+        </div>
+      </div>
+
+    </div><!-- /hero-card -->
+
+    <!-- TABS -->
+    <nav class="tabs">
+      <button type="button" class="tab-btn active" data-tab="overview" onclick="switchTab(this,'overview')">
+        <i class="fas fa-th-large"></i> Overview
+      </button>
+      <button type="button" class="tab-btn" data-tab="edit" onclick="switchTab(this,'edit')">
+        <i class="fas fa-user-edit"></i> Edit Profile
+      </button>
+      <button type="button" class="tab-btn" data-tab="settings" onclick="switchTab(this,'settings')">
+        <i class="fas fa-cog"></i> Settings
+      </button>
+    </nav>
+
+    <!-- Panel: Overview -->
+    <div class="panel active" id="panel-overview">
+      <div class="p-card">
+        <div class="c-head"><div class="c-title"><i class="fas fa-id-card"></i> Profile summary</div></div>
+        <div class="c-body">
+          <div class="summary-grid">
+            <div><div class="sum-label">Full name</div><div class="sum-val">{{ user.get_full_name|default:"—" }}</div></div>
+            <div><div class="sum-label">Username</div><div class="sum-val mono">@{{ user.username }}</div></div>
+            <div><div class="sum-label">Email</div><div class="sum-val mono">{{ user.email|default:"—" }}</div></div>
+            <div><div class="sum-label">Organization</div><div class="sum-val">{{ profile_obj.organization|default:"—" }}</div></div>
+            <div><div class="sum-label">Unit / Division</div><div class="sum-val">{{ profile_obj.unit|default:"—" }}</div></div>
+            <div>
+              <div class="sum-label">Status</div>
+              <div class="sum-val {% if user.is_active %}badge-active{% else %}text-danger{% endif %}">
+                  
+                  {% if user.is_active %}
+                      Active
+                  {% else %}
+                      Inactive
+                  {% endif %}
+
+                  {% if user.is_superuser %}
+                      | Superuser
+                  {% elif user.is_staff %}
+                      | Staff
+                  {% endif %}
+                  
+              </div>
+            </div>
+            <div><div class="sum-label">Joined</div><div class="sum-val mono">{{ user.date_joined|date:"d M Y" }}</div></div>
+            <div><div class="sum-label">Last login</div><div class="sum-val mono">{{ user.last_login|date:"d M Y · H:i" }}</div></div>
+          </div>
+        </div>
+      </div>
+
+      {% if settings.WEB_AUTHENTICATION and user.is_staff or settings.ADMIN %}
+      <div class="p-card">
+        <div class="c-head">
+          <div class="c-title"><i class="fas fa-users-cog"></i> Administration</div>
+        </div>
+        <div class="c-body" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:3px;">Admin Panel</div>
+            <div style="font-size:12px; color:var(--text-mute);">Manage users, tasks, and system settings</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a href="/admin" class="p-btn p-btn-ghost" style="text-decoration:none !important;">
+              <i class="fas fa-users-cog"></i> Admin Panel
+            </a>
+            <a href="/accounts/logout/" class="p-btn p-btn-danger" style="text-decoration:none !important;">
+              <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Panel: Edit Profile -->
+    <div class="panel" id="panel-edit">
+      <div class="p-card">
+        <div class="c-head"><div class="c-title"><i class="fas fa-user-edit"></i> Personal information</div></div>
+        <div class="c-body">
+          <div class="fg">
+            <div class="f-group">
+              <label class="f-label">First Name</label>
+              <input class="f-input" type="text" name="first_name" value="{{ user.first_name }}" placeholder="First name">
+            </div>
+            <div class="f-group">
+              <label class="f-label">Last Name</label>
+              <input class="f-input" type="text" name="last_name" value="{{ user.last_name }}" placeholder="Last name">
+            </div>
+            <div class="f-group">
+              <label class="f-label">Username</label>
+              <div class="f-pfx-wrap">
+                <span class="f-pfx">@</span>
+                <input class="f-input mono" type="text" name="username" value="{{ user.username }}">
+              </div>
+            </div>
+            <div class="f-group">
+              <label class="f-label">Email Address</label>
+              <input class="f-input" type="email" name="email" value="{{ user.email }}" placeholder="you@example.com">
+            </div>
+            <div class="f-group">
+              <label class="f-label">Organization</label>
+              <div class="f-pfx-wrap">
+                <span class="f-pfx"><i class="fas fa-building"></i></span>
+                <input class="f-input" type="text" name="organization" value="{{ profile_obj.organization }}" placeholder="Organization">
+              </div>
+            </div>
+            <div class="f-group">
+              <label class="f-label">Unit / Division</label>
+              <div class="f-pfx-wrap">
+                <span class="f-pfx"><i class="fas fa-sitemap"></i></span>
+                <input class="f-input" type="text" name="unit" value="{{ profile_obj.unit }}" placeholder="Division">
+              </div>
+            </div>
+          </div>
+          <div class="f-actions">
+            <button type="reset" class="p-btn p-btn-ghost"><i class="fas fa-undo"></i> Discard</button>
+            <button type="submit" class="p-btn p-btn-green"><i class="fas fa-check"></i> Save changes</button>
+          </div>
+        </div>
+      </div>
+
+  </form>{# close profileForm before password form #}
+
+      <!-- Change Password (AJAX — no redirect) -->
+      <div class="p-card">
+        <div class="c-head"><div class="c-title"><i class="fas fa-key"></i> Change Password</div></div>
+        <div class="c-body">
+          <div id="pwdErrorBox" style="
+            display:none; padding:10px 14px; border-radius:6px; margin-bottom:14px;
+            background:rgba(237,107,96,0.1); border:1px solid rgba(237,107,96,0.3);
+            font-size:13px; color:#ed6b60;
+          "></div>
+          <div class="fg">
+            <div class="f-group" style="grid-column:1/-1;">
+              <label class="f-label">Current Password</label>
+              <div class="password-wrapper">
+                <input class="f-input" id="pwdOld" type="password"
+                     placeholder="Enter current password" autocomplete="current-password">
+                     <i class="fa-solid fa-eye toggle-password-icon" id="toggle-password"></i>
+              </div>              
+            </div>
+            <div class="f-group">
+              <label class="f-label">New Password</label>
+              <div id="new-password" class="password-wrapper">
+                <input class="f-input" id="pwdNew1" type="password"
+                     placeholder="New password" autocomplete="new-password">
+                <i class="fa-solid fa-eye toggle-password-icon" id="toggle-password"></i>
+              </div>
+            </div>
+            <div class="f-group">
+              <label class="f-label">Confirm New Password</label>
+              <div class="password-wrapper">
+                <input class="f-input" id="pwdNew2" type="password"
+                     placeholder="Repeat new password" autocomplete="new-password">
+                <i class="fa-solid fa-eye toggle-password-icon" id="toggle-password"></i>
+              </div>
+            </div>
+          </div>
+          <div class="f-actions">
+            <a href="{% url 'account_reset_password' %}" class="p-btn p-btn-ghost"
+               style="text-decoration:none !important;">
+              <i class="fas fa-question-circle"></i> Forgot Password?
+            </a>
+            <button type="button" class="p-btn p-btn-green" id="pwdSubmitBtn"
+                    onclick="submitPasswordChange()">
+              <i class="fas fa-key"></i> Change Password
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# profileFormSettings — carries form_type=settings so views.py only updates toggles from this form #}
+      <form method="post" action="{% url 'profile_update' %}" enctype="multipart/form-data" id="profileFormSettings">
+        {% csrf_token %}
+        <input type="hidden" name="form_type"    value="settings">
+        <input type="hidden" name="username"     value="{{ user.username }}">
+        <input type="hidden" name="first_name"   value="{{ user.first_name }}">
+        <input type="hidden" name="last_name"    value="{{ user.last_name }}">
+        <input type="hidden" name="email"        value="{{ user.email }}">
+        <input type="hidden" name="organization" value="{{ profile_obj.organization }}">
+        <input type="hidden" name="unit"         value="{{ profile_obj.unit }}">
+        <input type="hidden" name="delete_avatar" value="">
+        <input type="hidden" name="delete_header" value="">
+
+    </div>{# /panel-edit #}
+
+    <!-- Panel: Settings -->
+    <div class="panel" id="panel-settings">
+      <div class="p-card">
+        <div class="c-head"><div class="c-title"><i class="fas fa-sliders-h"></i> Preferences</div></div>
+        <div class="c-body">
+
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:12px;">Notifications</div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <h4>Analysis completed</h4>
+              <p>Notify when an analysis finishes processing</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" name="notif_analysis" {% if profile_obj.notif_analysis %}checked{% endif %}>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <h4>Report submissions</h4>
+              <p>Notify when a new report is submitted</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" name="notif_report" {% if profile_obj.notif_report %}checked{% endif %}>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <h4>System announcements</h4>
+              <p>Maintenance windows and platform updates</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" name="notif_system" {% if profile_obj.notif_system %}checked{% endif %}>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <div style="height:1px;background:var(--border-sub);margin:20px 0;"></div>
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:12px;">Security</div>
+
+          <div class="toggle-row" style="border-bottom:1px solid var(--border-sub);">
+            <div class="toggle-info">
+              <h4>Two-Factor Authentication (TOTP)</h4>
+              <p>
+                Secure your account with a 6-digit code from Google Authenticator or Authy.
+                &nbsp;
+                {% if user.totpdevice_set.filter.exists %}
+                  <span style="color:#30b22d;font-family:var(--mono);font-size:11px;">● Active</span>
+                {% else %}
+                  <span style="color:var(--text-dim);font-family:var(--mono);font-size:11px;">● Inactive</span>
+                {% endif %}
+              </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              {% if user.totpdevice_set.filter.exists %}
+                <a href="/account/two_factor/backup/tokens/"
+                   class="p-btn p-btn-ghost"
+                   style="text-decoration:none !important;padding:4px 10px;font-size:12px;">
+                  <i class="fas fa-key"></i> Backup codes
+                </a>
+                <a href="/account/two_factor/disable/"
+                   onclick="return confirm('Disable 2FA? Your account will be less secure.')"
+                   title="Click to disable 2FA"
+                   style="text-decoration:none !important;display:inline-flex;">
+                  <span style="position:relative;width:40px;height:22px;display:inline-block;cursor:pointer;background:#6384ff;border:1px solid #6384ff;border-radius:11px;">
+                    <span style="position:absolute;top:2px;left:20px;width:16px;height:16px;background:#fff;border-radius:50%;"></span>
+                  </span>
+                </a>
+              {% else %}
+                <a href="/account/two_factor/setup/"
+                   title="Click to enable 2FA"
+                   style="text-decoration:none !important;display:inline-flex;">
+                  <span style="position:relative;width:40px;height:22px;display:inline-block;cursor:pointer;background:#1a1d2b;border:1px solid #2a2d3a;border-radius:11px;">
+                    <span style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#4a5168;border-radius:50%;"></span>
+                  </span>
+                </a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="height:1px;background:var(--border-sub);margin:20px 0;"></div>
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:12px;">Display</div>
+
+          <div class="toggle-row" style="border-bottom:none;">
+            <div class="toggle-info">
+              <h4>Compact view</h4>
+              <p>Reduce spacing in list and table views</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" name="display_compact" {% if profile_obj.display_compact %}checked{% endif %}>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <div class="f-actions" style="margin-top:20px;">
+            <button type="submit" class="p-btn p-btn-green"><i class="fas fa-check"></i> Save settings</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </form>{# /profileFormSettings #}
+
+</div>
+
+<div id="p-toast">
+  <i class="fas fa-check-circle"></i>
+  <span id="p-toast-msg">Done</span>
+</div>
+
+<script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const passwordWrapper = document.querySelector('#new-password')
+        const passwordInput = document.querySelector('#pwdNew1')
+        const usernameInput = document.querySelector('#profileName').textContent
+        console.log(usernameInput)
+
+      
+        const meterContainer = document.createElement('div')
+        meterContainer.className = 'strength-meter'
+        const meterFill = document.createElement('div')
+        meterFill.className = 'strength-meter-fill'
+        const strengthText = document.createElement('span')
+        strengthText.className = 'strength-text'
+      
+        meterContainer.appendChild(meterFill)
+        passwordWrapper.parentNode.appendChild(meterContainer)
+        passwordWrapper.parentNode.appendChild(strengthText)
+      
+        passwordInput.addEventListener('input', function () {
+          const val = passwordInput.value
+          const username = usernameInput ? usernameInput.toLowerCase() : ''
+          let score = 0
+      
+          if (val.length === 0) {
+            updateBar(0, '')
+            return
+          }
+          const hasUpper = /[A-Z]/.test(val)
+          const hasLower = /[a-z]/.test(val)
+          const hasNumber = /\d/.test(val)
+          const hasSpecial = /[^A-Za-z0-9]/.test(val)
+          const hasRepeats = /(.)\1{2,}/.test(val)
+          const containsUsername = username && val.toLowerCase().includes(username)
+          if (val.length >= 8 && val.length <= 16){
+            score += 1
+            if (!hasRepeats && val.length > 0) {
+              score += 1
+              if (hasUpper && hasLower && hasNumber && hasSpecial) {
+                score += 1
+                if (!containsUsername && val.length > 0) score += 1
+              } 
+            } 
+            
+          } 
+
+          if (score <= 1) {
+            updateBar(25, 'Weak', '#ff4d4d')
+          } else if (score === 2) {
+            updateBar(50, 'Medium', '#ffd11a')
+          } else if (score === 3) {
+            updateBar(75, 'Strong', '#26de81')
+          } else if (score === 4) {
+            updateBar(100, 'Excellent', '#0fb9b1')
+          }
+        })
+        // Toggle password visibility untuk password1 dan password2
+        const passwordInputs = document.querySelectorAll('input[type="password"]')
+      
+        passwordInputs.forEach((input) => {
+          // Bungkus input dengan wrapper jika belum
+          if (!input.parentElement.classList.contains('password-wrapper')) {
+            const wrapper = document.createElement('div')
+            wrapper.className = 'password-wrapper'
+            input.parentNode.insertBefore(wrapper, input)
+            wrapper.appendChild(input)
+          }
+      
+          // Buat icon toggle
+          const toggleIcon = document.createElement('i')
+          toggleIcon.className = 'fa-solid fa-eye toggle-password-icon'
+          input.parentNode.appendChild(toggleIcon)
+      
+          // Event listener untuk toggle
+          toggleIcon.addEventListener('click', function () {
+            const type = input.getAttribute('type') === 'password' ? 'text' : 'password'
+            input.setAttribute('type', type)
+            this.classList.toggle('fa-eye')
+            this.classList.toggle('fa-eye-slash')
+          })
+        })
+      
+        function updateBar(width, text, color) {
+          meterFill.style.width = width + '%'
+          meterFill.style.backgroundColor = color
+          strengthText.innerText = text
+          strengthText.style.color = color
+        }
+    })
+/* ── Tabs ── */
+function switchTab(btn, name) {
+  document.querySelectorAll('.profile-wrap .tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.profile-wrap .panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+}
+function goToTab(name) {
+  const btn = document.querySelector('.profile-wrap .tab-btn[data-tab="' + name + '"]');
+  if (btn) switchTab(btn, name);
+  document.querySelector('.profile-wrap .tabs').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+/* ── Auto-dismiss flash ── */
+document.querySelectorAll('.profile-wrap .flash').forEach(el => setTimeout(() => el.remove(), 4500));
+
+/* ── Toast ── */
+function showToast(msg, ms = 3500) {
+  const t = document.getElementById('p-toast');
+  document.getElementById('p-toast-msg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* ── Avatar upload — auto submit ── */
+document.getElementById('avatarInput').addEventListener('change', function(e) {
+  const f = e.target.files[0]; if (!f) return;
+  showToast('Uploading photo...', 60000);
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('deleteAvatarFlag').value = '';
+    let prev = document.getElementById('avatarPreview');
+    if (prev) {
+      prev.src = ev.target.result;
+    } else {
+      const init = document.getElementById('avatarInitials');
+      if (init) {
+        const img = document.createElement('img');
+        img.id = 'avatarPreview'; img.src = ev.target.result;
+        img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;';
+        init.replaceWith(img);
+      }
+    }
+    document.getElementById('removeAvatarBtn').classList.remove('hidden');
+    document.getElementById('avSep').classList.remove('hidden');
+    document.getElementById('profileForm').submit();
+  };
+  reader.readAsDataURL(f);
+});
+
+/* ── Cover upload — auto submit ── */
+document.getElementById('headerInput').addEventListener('change', function(e) {
+  const f = e.target.files[0]; if (!f) return;
+  showToast('Uploading cover...', 60000);
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('deleteHeaderFlag').value = '';
+    document.getElementById('headerPreview').src = ev.target.result;
+    document.getElementById('removeCoverBtn').classList.remove('hidden');
+    document.getElementById('profileForm').submit();
+  };
+  reader.readAsDataURL(f);
+});
+
+/* ── Delete photo — auto submit ── */
+function deletePhoto(type) {
+  const label = type === 'avatar' ? 'profile photo' : 'cover photo';
+  if (!confirm('Remove ' + label + '? It will revert to default.')) return;
+
+  const DEFAULT_COVER    = '{% static "img/Cover_Photo.png" %}';
+  const DEFAULT_INITIALS = '{{ user.username|slice:":2"|upper }}';
+
+  if (type === 'avatar') {
+    document.getElementById('deleteAvatarFlag').value = '1';
+    document.getElementById('avatarInput').value = '';
+    const prev = document.getElementById('avatarPreview');
+    if (prev) {
+      const div = document.createElement('div');
+      div.id = 'avatarInitials'; div.className = 'avatar-initials';
+      div.textContent = DEFAULT_INITIALS;
+      div.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;color:#fff;background:linear-gradient(135deg,#6384ff,#a371f7);';
+      prev.replaceWith(div);
+    }
+    document.getElementById('removeAvatarBtn').classList.add('hidden');
+    document.getElementById('avSep').classList.add('hidden');
+  } else {
+    document.getElementById('deleteHeaderFlag').value = '1';
+    document.getElementById('headerInput').value = '';
+    document.getElementById('headerPreview').src = DEFAULT_COVER;
+    document.getElementById('removeCoverBtn').classList.add('hidden');
+  }
+  showToast('Removing ' + label + '...', 60000);
+  document.getElementById('profileForm').submit();
+}
+
+/* ── Compact View ── */
+const cbCompact = document.querySelector('input[name="display_compact"]');
+if (cbCompact) {
+  function applyCompact(checked) { document.body.classList.toggle('compact-mode', checked); }
+  cbCompact.addEventListener('change', function() { applyCompact(this.checked); });
+  applyCompact(cbCompact.checked);
+}
+
+/* ── AJAX Password Change ──
+ * redirect:'manual' detects allauth redirect (success = opaqueredirect)
+ * vs form re-render (error = status 200).
+ * On success: reload page so Django session cookie is refreshed properly.
+ */
+async function submitPasswordChange() {
+  const oldpwd = document.getElementById('pwdOld').value;
+  const pwd1   = document.getElementById('pwdNew1').value;
+  const pwd2   = document.getElementById('pwdNew2').value;
+  const errBox = document.getElementById('pwdErrorBox');
+  const btn    = document.getElementById('pwdSubmitBtn');
+
+  if (!oldpwd || !pwd1 || !pwd2) {
+    errBox.textContent = 'Please fill in all password fields.';
+    errBox.style.display = 'block'; return;
+  }
+  if (pwd1 !== pwd2) {
+    errBox.textContent = 'New passwords do not match.';
+    errBox.style.display = 'block'; return;
+  }
+
+  const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  errBox.style.display = 'none';
+
+  try {
+    const formData = new FormData();
+    formData.append('oldpassword', oldpwd);
+    formData.append('password1',  pwd1);
+    formData.append('password2',  pwd2);
+    formData.append('csrfmiddlewaretoken', csrf);
+
+    const res = await fetch('{% url "account_change_password" %}', {
+      method: 'POST', body: formData,
+      redirect: 'manual', credentials: 'same-origin',
+    });
+
+    if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 301) {
+      showToast('Password changed successfully!', 3000);
+      document.getElementById('pwdOld').value  = '';
+      document.getElementById('pwdNew1').value = '';
+      document.getElementById('pwdNew2').value = '';
+      setTimeout(() => { window.location.reload(); }, 1500);
+    } else {
+      const html   = await res.text();
+      const parser = new DOMParser();
+      const doc    = parser.parseFromString(html, 'text/html');
+      const errors = [];
+      doc.querySelectorAll('ul.errorlist li, .alert-danger, .invalid-feedback').forEach(el => {
+        const txt = el.textContent.trim();
+        if (txt) errors.push(txt);
+      });
+      errBox.textContent = errors.length
+        ? errors.join(' · ')
+        : 'Incorrect current password or new password does not meet requirements.';
+      errBox.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-key"></i> Change Password';
+    }
+  } catch (err) {
+    errBox.textContent = 'Network error. Please try again.';
+    errBox.style.display = 'block';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-key"></i> Change Password';
+  }
+}
+
+/* ── Form submit feedback ── */
+document.getElementById('profileForm').addEventListener('submit', function() {
+  showToast('Saving...', 2000);
+});
+const pfs = document.getElementById('profileFormSettings');
+if (pfs) {
+  pfs.addEventListener('submit', function() {
+    showToast('Saving settings...', 2000);
+  });
+}
+</script>
+
+{% endblock %}

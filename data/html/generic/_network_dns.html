@@ -1,33 +1,35 @@
 {% if results.network.dns %}
-<table class="table table-striped table-bordered">
+<table class="table table-dark table-striped table-bordered mb-0">
+    <thead>
     <tr>
         <th>Name</th>
         <th>Response</th>
         {% if results.network_proc_map %}<th>Process Name (PID)</th>{% endif %}
     </tr>
+    </thead>
+    <tbody>
     {% for dns in results.network.dns %}
     <tr>
-        <td><span class="mono">{{dns.request}}</span> {% if dns.source == "behavior" %}<span class="badge bg-primary">behavior</span>{% endif %}</td>
+        <td>{{dns.request}} {% if dns.source == "behavior" %}<span class="badge bg-primary">behavior</span>{% endif %}</td>
         <td>
             {% for a in dns.answers %}
-                <span class="mono">{{a.type}} {{a.data}}</span>
-                {%  if not loop.last %}
-                <br>
-                {% endif %}
+                {{a.type}} {{a.data}}
+                {%  if not loop.last %}<br>{% endif %}
             {% endfor %}
         </td>
         {% if results.network_proc_map %}
             <td>
                 {% if dns.process_name %}
-                    <span class="mono">{{ dns.process_name }}{% if dns.process_id %} ({{ dns.process_id }}){% endif %}</span>
+                    {{ dns.process_name }}{% if dns.process_id %} ({{ dns.process_id }}){% endif %}
                 {% else %}
-                    <span class="mono">-</span>
+                    -
                 {% endif %}
             </td>
         {% endif %}
     </tr>
     {% endfor %}
+    </tbody>
 </table>
 {% else %}
-<p>Nothing to display.</p>
+<p class="text-white-50 text-center p-3 mb-0">Nothing to display.</p>
 {% endif %}

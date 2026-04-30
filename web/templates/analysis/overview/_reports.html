@@ -14,10 +14,17 @@
       <a href="{% url "filereport" analysis.info.id "htmlsummary" %}" class="btn btn-sm btn-outline-light m-1"><i
             class="fas fa-file-invoice me-1"></i> HTML Summary</a>
       {% endif %}
+      {# 
       {% if config.reportpdf and reports_exist.pdf %}
-      <a href="{% url "filereport" analysis.info.id "pdf" %}" class="btn btn-sm btn-outline-light m-1"><i
-            class="fas fa-file-pdf me-1"></i> PDF</a>
+      <a href="{% url "filereport" analysis.info.id "pdf" %}" class="btn btn-sm btn-outline-light m-1">
+      <i class="fas fa-file-pdf me-1"></i> PDF
+      </a>
       {% endif %}
+      #}
+      <a href="{% url 'export_docx' analysis.info.id %}"
+      class="btn btn-sm btn-report-custom m-1">
+      <i class="fas fa-file-word me-1"></i> Docx
+      </a>
       {% if config.maec41 and reports_exist.maec %}
       <a href="{% url "filereport" analysis.info.id "maec" %}" class="btn btn-sm btn-outline-light m-1">MAEC</a>
       {% endif %}

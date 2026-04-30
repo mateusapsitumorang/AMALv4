@@ -1,96 +1,133 @@
-<!-- Sidebar -->
-<div class="sidebar-wrapper" id="sidebar">
-    <!-- Logo Section -->
-    <div class="p-4 border-bottom sidebar-logo-section d-flex align-items-center" style="border-color: var(--sidebar-border) !important;">
-        <a href="{% url 'dashboard' %}" class="d-flex align-items-center text-decoration-none">
-            <div class="sidebar-logo-icon d-flex align-items-center justify-content-center flex-shrink-0" style="width: 42px; height: 42px;">
-                <img src="{{ STATIC_URL }}img/BSSN.png" alt="BSSN" style="width: 42px; height: 42px; object-fit: contain;">
+<div class="sidebar-wrapper" id="sidebar" data-restoring="true">
+    <div class="sidebar-logo-section d-flex align-items-center"
+        style="height: 70px; padding: 0 1rem; border-bottom: 1px solid var(--border) !important; box-sizing: border-box;">
+        <a href="{% url 'dashboard' %}" class="d-flex align-items-center text-decoration-none w-100 h-100">
+            <div class="sidebar-logo-icon d-flex align-items-center justify-content-center flex-shrink-0"
+                style="width: 42px; height: 42px;">
+                <img src="{{ STATIC_URL }}img/BSSN.png" alt="BSSN"
+                    style="width: 42px; height: 42px; object-fit: contain;">
             </div>
-            <div class="ms-3 sidebar-logo-text">
-                <h5 class="mb-0 fw-bold" style="color: #FFFFFF; font-size: 1.1rem; letter-spacing: -0.02em;">Amal v4</h5>
-                <small style="color: var(--sidebar-text); font-size: 0.75rem;">Sandbox Analysis</small>
+            <div class="ms-2 sidebar-logo-text">
+                <h5 class="mb-0 fw-bold" style="color: #FFFFFF; font-size: 1.1rem; letter-spacing: -0.03em;">AMAL <Var></Var>V4</h5>
+                <small style="color: var(--sidebar-text); font-size: 0.70rem;">Automated Malware Analyzer</small>
             </div>
         </a>
-    </div>
+    </div>      
 
     {% if user.is_authenticated %}
-    <!-- User Profile Section -->
-    <div class="p-3 mx-3 mt-3 mb-2 rounded sidebar-user-card d-flex align-items-center" style="background: var(--sidebar-bg-hover); border: 1px solid var(--sidebar-border);">
-        <div class="position-relative flex-shrink-0">
-            {% load socialaccount %}
-            {% get_social_accounts user as accounts %}
-            {% if accounts.google %}
-                <img src="{{ accounts.google.0.get_avatar_url }}" alt="{{ user.username }}" class="rounded-circle" style="width: 36px; height: 36px; object-fit: cover; border: 2px solid var(--sidebar-accent);">
-            {% else %}
-                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 36px; height: 36px; background: linear-gradient(135deg, var(--sidebar-accent) 0%, #4F6AE8 100%); border: 2px solid var(--sidebar-accent);">
+    <div class="p-3 mx-2 mt-3 mb-2 rounded sidebar-user-card"
+        style="border: 1px solid var(--sidebar-border);"> 
+        <a href="{% url 'profile' %}" class="d-flex align-items-center text-decoration-none mb-2">
+            <div class="position-relative flex-shrink-0">
+                {% load socialaccount %}
+                {% get_social_accounts user as accounts %}
+                {% if profile_obj.avatar %}
+                <img src="{{ profile_obj.avatar.url }}" alt="{{ user.username }}" class="rounded-circle"
+                    style="width: 36px; height: 36px; object-fit: cover; border: 1px solid var(--border); box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0,0,0,0.6);">
+                {% elif accounts.google %}
+                <img src="{{ accounts.google.0.get_avatar_url }}" alt="{{ user.username }}" class="rounded-circle"
+                    style="width: 36px; height: 36px; object-fit: cover; border: 1px solid var(--border); box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0,0,0,0.6);">
+                {% else %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center"
+                    style="width: 36px; height: 36px; background: linear-gradient(135deg, var(--sidebar-accent) 0%, #4F6AE8 100%); border: 1px solid var(--border); box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0,0,0,0.6);">
                     <span class="text-white fw-bold" style="font-size: 0.8rem;">{{ user.username|slice:":2"|upper }}</span>
                 </div>
-            {% endif %}
-            <span class="position-absolute bottom-0 end-0 rounded-circle" style="width: 10px; height: 10px; background: var(--success); border: 2px solid var(--sidebar-bg);"></span>
-        </div>
-        <div class="ms-3 flex-grow-1 overflow-hidden sidebar-user-info">
-            <div class="fw-semibold" style="font-size: 0.825rem; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                {{ user.get_full_name|default:user.username }}
+                {% endif %}
+                <span class="position-absolute bottom-0 end-0 rounded-circle"
+                    style="width: 10px; height: 10px; background: var(--success); border: 2px solid var(--sidebar-bg);"></span>
             </div>
-            <small style="color: var(--sidebar-text); font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">
-                {{ user.email }}
-            </small>
-        </div>
-        <a href="{% url 'account_logout' %}" class="btn btn-sm ms-2 sidebar-logout-btn flex-shrink-0" style="padding: 4px 8px; background: transparent; border: 1px solid var(--sidebar-border); color: var(--sidebar-text); border-radius: 6px;" title="Logout">
-            <i class="fas fa-sign-out-alt" style="font-size: 0.75rem;"></i>
+            <div class="ms-3 flex-grow-1 overflow-hidden sidebar-user-info">
+                <div class="fw-semibold"
+                    style="font-size: 0.825rem; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    {{ user.get_full_name|default:user.username }}
+                </div>
+                <small
+                    style="color: var(--sidebar-text); font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">
+                    {{ user.email }}
+                </small>
+            </div>
         </a>
+
+        <form method="post" action="{% url 'account_logout' %}">
+            {% csrf_token %}
+            <button type="submit"
+                class="btn btn-danger btn-sm w-100 sidebar-logout-btn d-flex align-items-center justify-content-center gap-2"
+                style="padding: 5px 8px; border-radius: 6px; font-size: 0.75rem;">
+                <i class="fas fa-sign-out-alt"></i>
+                <span class="sidebar-text">Logout</span>
+            </button>
+        </form>
     </div>
     {% endif %}
 
-    <!-- Navigation Menu -->
     <nav class="py-3">
         <div class="px-3 mb-2">
-            <small class="text-uppercase fw-semibold sidebar-section-label" style="font-size: 0.65rem; letter-spacing: 0.8px; color: var(--sidebar-text);">Menu Utama</small>
+            <small class="text-uppercase fw-semibold sidebar-section-label"
+                style="font-size: 0.65rem; letter-spacing: 0.8px; color: var(--sidebar-text);">Main Menu</small>
         </div>
-        
+
         <ul class="nav flex-column">
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'dashboard' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="dashboard" data-bs-toggle="tooltip" data-bs-placement="right" title="Dashboard">
+                <a href="{% url 'dashboard' %}"
+                    class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="dashboard"
+                    data-bs-toggle="tooltip" data-bs-placement="right" title="Dashboard">
                     <i class="fas fa-th-large me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">Dashboard</span>
                 </a>
             </li>
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'analysis' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="analysis" data-bs-toggle="tooltip" data-bs-placement="right" title="Recent Analysis">
+                <a href="{% url 'analysis' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link"
+                    data-page="analysis" data-bs-toggle="tooltip" data-bs-placement="right" title="Recent Analysis">
                     <i class="fas fa-cube me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">Recent Analysis</span>
                 </a>
             </li>
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'pending' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="pending" data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Tasks">
+                <a href="{% url 'pending' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link"
+                    data-page="pending" data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Tasks">
                     <i class="fas fa-clock me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">Pending Tasks</span>
                 </a>
             </li>
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'submission' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="submission" data-bs-toggle="tooltip" data-bs-placement="right" title="Submit Sample">
+                <a href="{% url 'submission' %}"
+                    class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="submission"
+                    data-bs-toggle="tooltip" data-bs-placement="right" title="Submit Sample">
                     <i class="fas fa-upload me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">Submit Sample</span>
                 </a>
             </li>
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'statistics_data' 7 %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="statistics" data-bs-toggle="tooltip" data-bs-placement="right" title="Statistics">
+                <a href="{% url 'mobsf' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link"
+                    data-page="mobsf" data-bs-toggle="tooltip" data-bs-placement="right" title="MobSF Analysis">
+                    <i class="fas fa-mobile-alt me-3" style="width: 20px; font-size: 1rem;"></i>
+                    <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">MobSF Analysis</span>
+                </a>
+            </li>
+            <li class="nav-item px-3 mb-1">
+                <a href="{% url 'statistics_data'%}"
+                    class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="statistics"
+                    data-bs-toggle="tooltip" data-bs-placement="right" title="Statistics">
                     <i class="fas fa-users me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">Statistics</span>
                 </a>
             </li>
+            {% if user.is_staff or settings.ADMIN%}
             <li class="nav-item px-3 mb-1">
-                <a href="{% url 'apiv2' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link" data-page="apiv2" data-bs-toggle="tooltip" data-bs-placement="right" title="API Settings">
+                <a href="{% url 'apiv2' %}" class="nav-link d-flex align-items-center py-2 px-3 rounded sidebar-link"
+                    data-page="apiv2" data-bs-toggle="tooltip" data-bs-placement="right" title="API Settings">
                     <i class="fas fa-cog me-3" style="width: 20px; font-size: 1rem;"></i>
                     <span class="fw-medium sidebar-text" style="font-size: 0.875rem;">API Settings</span>
                 </a>
             </li>
+            {% endif %}
         </ul>
     </nav>
 
-    <!-- Collapse Toggle Button (inside sidebar) -->
-    <div class="px-3 mb-2">
-        <button class="btn d-flex align-items-center w-100 py-2 px-3 rounded sidebar-toggle-btn" id="sidebarCollapseBtn" style="background: var(--sidebar-bg-hover); border: 1px solid var(--sidebar-border); color: var(--sidebar-text);" title="Collapse Sidebar">
+    <div class="px-3">
+        <button class="btn d-flex align-items-center w-100 py-2 px-3 rounded sidebar-toggle-btn" id="sidebarCollapseBtn"
+            style="background: var(--sidebar-bg-hover); border: 1px solid var(--sidebar-border); color: var(--sidebar-text);"
+            title="Collapse Sidebar">
             <i class="fas fa-chevron-left" style="width: 20px; font-size: 0.85rem; transition: transform 0.3s;"></i>
             <span class="fw-medium sidebar-text ms-3" style="font-size: 0.8rem;">Collapse</span>
         </button>
@@ -98,144 +135,256 @@
 </div>
 
 <style>
-    /* Sidebar dark theme link styles */
+    .sidebar-wrapper[data-restoring="true"],
+    .sidebar-wrapper[data-restoring="true"] * {
+        transition: none !important;
+    }
+
     .sidebar-link {
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         border-radius: 6px;
         color: var(--sidebar-text) !important;
     }
+
+    .sidebar-wrapper[data-restoring="true"] .sidebar-link {
+        transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
     .sidebar-link i {
         color: var(--sidebar-text) !important;
-        transition: color 0.2s;
+        transition: color 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
+
     .sidebar-link:hover {
         background-color: var(--sidebar-bg-hover) !important;
         color: var(--sidebar-text-hover) !important;
         transform: translateX(3px);
     }
+
     .sidebar-link:hover i {
         color: var(--sidebar-text-hover) !important;
     }
+
     .sidebar-link.active {
         background-color: var(--sidebar-bg-active) !important;
         color: var(--sidebar-text-active) !important;
         font-weight: 600 !important;
         box-shadow: inset 3px 0 0 var(--sidebar-accent);
     }
+
     .sidebar-link.active i {
         color: var(--sidebar-text-active) !important;
     }
-    /* Sidebar text transitions for collapse */
-    .sidebar-text,
-    .sidebar-section-label,
-    .sidebar-user-info,
-    .sidebar-logout-btn,
-    .sidebar-external-icon,
-    .sidebar-logo-text,
-    .sidebar-status-box {
-        transition: opacity 0.2s ease, visibility 0.2s ease, width 0.2s ease;
-    }
+
     .sidebar-toggle-btn {
-        transition: all 0.2s;
+        transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
     .sidebar-toggle-btn:hover {
         background: var(--sidebar-border) !important;
         color: #FFFFFF !important;
     }
+
     .sidebar-toggle-btn i {
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    .sidebar-wrapper:not([data-restoring="true"]) {
+        transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-text,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-section-label,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-user-info,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-logout-btn,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-external-icon,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-logo-text,
+    .sidebar-wrapper:not([data-restoring="true"]) .sidebar-status-box {
+        transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
     .sidebar-wrapper::-webkit-scrollbar {
         width: 5px;
     }
+
     .sidebar-wrapper::-webkit-scrollbar-track {
         background: transparent;
     }
+
     .sidebar-wrapper::-webkit-scrollbar-thumb {
         background: var(--sidebar-border);
         border-radius: 10px;
     }
+
     .sidebar-wrapper::-webkit-scrollbar-thumb:hover {
         background: #3A3F55;
     }
-    /* Tooltip only in collapsed mode */
+
     .sidebar-wrapper:not(.collapsed) .sidebar-link .tooltip {
         display: none !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-logo-section {
+        padding: 0 !important; 
+        justify-content: center;
+        height: 70px !important;
+        gap: 0;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-logo-section a {
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        gap: 0;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-logo-icon {
+        margin: 0 !important;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-logo-text {
+        display: none !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-user-card {
+        flex-direction: column;
+        margin: 0.75rem 0.5rem !important;
+        padding: 0.5rem 0 !important;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-user-card > a {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-user-card > div:first-child {
+        margin-bottom: 0 !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-user-card .sidebar-user-info {
+        display: none !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-logout-btn {
+        margin-left: 0 !important;
+        margin-top: 0.5rem !important;
+        padding: 0.35rem !important;
+        width: 80% !important;
+    }
+
+    .sidebar-wrapper.collapsed nav {
+        padding: 0.75rem 0 !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-section-label {
+        display: none;
+    }
+
+    .sidebar-wrapper.collapsed .nav-item {
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+    }
+
+    .sidebar-wrapper.collapsed .nav-link {
+        padding: 0.75rem !important;
+        justify-content: center;
+    }
+
+    .sidebar-wrapper.collapsed .nav-link i {
+        margin-right: 0 !important;
+        margin-left: 0 !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-toggle-btn {
+        justify-content: center !important;
+        padding: 0.75rem !important;
+    }
+
+    .sidebar-wrapper.collapsed .sidebar-toggle-btn i {
+        transform: rotate(180deg);
+        margin-right: 0 !important;
     }
 </style>
 
 <script>
-    // Toggle sidebar collapse (desktop)
     function toggleSidebarCollapse() {
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.querySelector('.main-content');
         const topHeader = document.querySelector('.top-header');
-        
+
         sidebar.classList.toggle('collapsed');
         mainContent.classList.toggle('sidebar-collapsed');
         topHeader.classList.toggle('sidebar-collapsed');
-        
-        // Save state to localStorage
+
+        document.body.classList.toggle('sidebar-collapsed');
+
         const isCollapsed = sidebar.classList.contains('collapsed');
         localStorage.setItem('sidebarCollapsed', isCollapsed);
-        
-        // Enable/disable tooltips based on collapsed state
+
         updateTooltips(isCollapsed);
 
-        // Notify other components that sidebar state changed
         document.dispatchEvent(new CustomEvent('sidebarToggled', { detail: { collapsed: isCollapsed } }));
     }
-    
-    // Toggle sidebar on mobile (open/close overlay)
+
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebarOverlay');
         sidebar.classList.toggle('active');
         overlay.classList.toggle('active');
     }
-    
+
     function updateTooltips(isCollapsed) {
         document.querySelectorAll('.sidebar-link').forEach(link => {
-            const tooltip = bootstrap.Tooltip.getInstance(link);
+            const existingTooltip = bootstrap.Tooltip.getInstance(link);
+            if (existingTooltip) {
+                existingTooltip.dispose();
+            }
+
             if (isCollapsed) {
-                if (!tooltip) {
-                    new bootstrap.Tooltip(link, { trigger: 'hover', placement: 'right' });
-                }
-            } else {
-                if (tooltip) tooltip.dispose();
+                new bootstrap.Tooltip(link, { trigger: 'hover', placement: 'right' });
             }
         });
     }
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        // Restore collapsed state
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const sidebar = document.getElementById('sidebar');
+
         const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
         if (isCollapsed) {
-            document.getElementById('sidebar').classList.add('collapsed');
+            sidebar.classList.add('collapsed');
             document.querySelector('.main-content')?.classList.add('sidebar-collapsed');
             document.querySelector('.top-header')?.classList.add('sidebar-collapsed');
+            document.body.classList.add('sidebar-collapsed');
         }
+
         updateTooltips(isCollapsed);
-        
-        // Desktop collapse button
-        document.getElementById('sidebarCollapseBtn')?.addEventListener('click', toggleSidebarCollapse);
-        
-        // Mobile & top-header toggle
-        document.getElementById('sidebarToggle')?.addEventListener('click', function() {
+
+        document.getElementById('sidebarCollapseBtn')?.addEventListener('click', function () {
+            sidebar.removeAttribute('data-restoring');
+            toggleSidebarCollapse();
+        });
+
+        document.getElementById('sidebarToggle')?.addEventListener('click', function () {
+            sidebar.removeAttribute('data-restoring');
             if (window.innerWidth <= 768) {
                 toggleSidebar();
             } else {
                 toggleSidebarCollapse();
             }
         });
-        
-        // Highlight active nav item
+
         const currentPath = window.location.pathname;
         let bestMatch = null;
         let bestMatchLen = 0;
         document.querySelectorAll('.sidebar-link[data-page]').forEach(link => {
             const linkPath = new URL(link.href).pathname;
-            // Exact match or longest prefix match wins
             if (linkPath === currentPath) {
                 bestMatch = link;
                 bestMatchLen = Infinity;

@@ -1,0 +1,887 @@
+{% load i18n %}
+{% load humanize %}
+
+<section id="bytehist-analysis-block" class="mb-4">
+    <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary border-bottom py-2">
+            <h5 class="mb-0 text-white d-flex align-items-center">
+                <i class="fas fa-microchip me-2 text-info"></i> 
+                Byte Statistics & Entropy Analysis
+            </h5>
+        </div>
+
+        <!-- Card Body -->
+        <div class="card-body p-0">
+            
+            <div class="bytehist-panel bg-dark border-secondary">
+                
+                {# ── Top metric strip ── #}
+                <div class="bh-metric-strip">
+
+                    <div class="bh-metric-card bh-metric--entropy">
+                      <span class="bh-metric-label">Shannon Entropy</span>
+                      <span class="bh-metric-value" id="bh-entropy-val">
+                        {{ analysis.bytehist_analysis.entropy|floatformat:4 }}
+                      </span>
+                      <span class="bh-metric-unit">bits / byte</span>
+                      <div class="bh-entropy-bar-wrap">
+                        <div class="bh-entropy-bar-track">
+                          <div class="bh-entropy-bar-fill"
+                               id="bh-entropy-bar"
+                               style="width:{{ analysis.bytehist_analysis.entropy_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-entropy-range">
+                          <em>0</em><em>8</em>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="bh-metric-card bh-metric--chi">
+                      <span class="bh-metric-label">χ² Statistic</span>
+                      <span class="bh-metric-value">{{ analysis.bytehist_analysis.chi_square|floatformat:1 }}</span>
+                      <span class="bh-metric-unit">df = 255</span>
+                      <span class="bh-chi-verdict {% if analysis.bytehist_analysis.chi_verdict == 'random' %}bh-verdict--warn{% elif analysis.bytehist_analysis.chi_verdict == 'normal' %}bh-verdict--ok{% else %}bh-verdict--info{% endif %}">
+                        {{ analysis.bytehist_analysis.chi_verdict|upper }}
+                      </span>
+                    </div>
+
+                    <div class="bh-metric-card bh-metric--null">
+                      <span class="bh-metric-label">NULL Bytes</span>
+                      <span class="bh-metric-value">{{ analysis.bytehist_analysis.null_pct|floatformat:2 }}%</span>
+                      <span class="bh-metric-unit">of total bytes</span>
+                    </div>
+
+                    <div class="bh-metric-card bh-metric--printable">
+                      <span class="bh-metric-label">Printable ASCII</span>
+                      <span class="bh-metric-value">{{ analysis.bytehist_analysis.printable_pct|floatformat:2 }}%</span>
+                      <span class="bh-metric-unit">of total bytes</span>
+                    </div>
+
+                    <div class="bh-metric-card bh-metric--size">
+                      <span class="bh-metric-label">File Size</span>
+                      <span class="bh-metric-value">{{ analysis.bytehist_analysis.file_size|filesizeformat }}</span>
+                      <span class="bh-metric-unit">{{ analysis.bytehist_analysis.file_size|intcomma }} bytes</span>
+                    </div>
+
+                </div>
+
+                {# ── Classification banner ── #}
+                <div class="bh-section bh-classification-wrap">
+                    <div class="bh-classification bh-cls--{{ analysis.bytehist_analysis.classification|lower }}">
+                      <span class="bh-cls-icon">
+                        {% if analysis.bytehist_analysis.classification == "Encrypted" %}
+                          <i class="fas fa-lock"></i>
+                        {% elif analysis.bytehist_analysis.classification == "Compressed" %}
+                          <i class="fas fa-compress-arrows-alt"></i>
+                        {% elif analysis.bytehist_analysis.classification == "Packed" %}
+                          <i class="fas fa-box"></i>
+                        {% elif analysis.bytehist_analysis.classification == "Native Code" %}
+                          <i class="fas fa-microchip"></i>
+                        {% elif analysis.bytehist_analysis.classification == "Text/Script" %}
+                          <i class="fas fa-file-code"></i>
+                        {% else %}
+                          <i class="fas fa-question-circle"></i>
+                        {% endif %}
+                      </span>
+                      <span class="bh-cls-label">{{ analysis.bytehist_analysis.classification }}</span>
+                      <span class="bh-cls-desc">{{ analysis.bytehist_analysis.classification_desc }}</span>
+                      <span class="bh-cls-confidence">
+                        Confidence&nbsp;<strong>{{ analysis.bytehist_analysis.confidence }}%</strong>
+                      </span>
+                    </div>
+
+                    {# Indicator pills #}
+                    <div class="bh-indicators">
+                      {% for ind in analysis.bytehist_analysis.indicators %}
+                      <span class="bh-indicator bh-ind--{{ ind.level }}">
+                        <i class="fas fa-{{ ind.icon }}"></i>
+                        {{ ind.text }}
+                      </span>
+                      {% endfor %}
+                    </div>
+                </div>
+
+                {# ── Main chart area ── #}
+                <div class="bh-section bh-chart-section">
+                    <div class="bh-chart-header">
+                      <h5 class="bh-chart-title">Byte Value Distribution <small>(256 buckets)</small></h5>
+                      <div class="bh-chart-controls">
+                        <button class="bh-ctrl-btn bh-ctrl-active" data-view="bar" onclick="bhSetView('bar', this)">Bar</button>
+                        <button class="bh-ctrl-btn" data-view="area" onclick="bhSetView('area', this)">Area</button>
+                        <button class="bh-ctrl-btn" data-view="heat" onclick="bhSetView('heat', this)">Heatmap</button>
+                      </div>
+                    </div>
+
+                    {# Bar / Area chart #}
+                    <div class="bh-canvas-wrap" id="bh-chart-wrap">
+                      <canvas id="bh-hist-canvas" height="200"></canvas>
+                    </div>
+
+                    {# Heatmap (hidden by default) #}
+                    <div class="bh-heatmap-wrap" id="bh-heatmap-wrap" style="display:none">
+                      <div class="bh-heatmap-legend">
+                        <span>Low</span>
+                        <div class="bh-heatmap-grad"></div>
+                        <span>High</span>
+                      </div>
+                      <div class="bh-heatmap-grid" id="bh-heatmap-grid"></div>
+                      <div class="bh-heatmap-axis">
+                        <span>0x00</span>
+                        <span>0x10</span>
+                        <span>0x20</span>
+                        <span>0x30</span>
+                        <span>0x40</span>
+                        <span>0x50</span>
+                        <span>0x60</span>
+                        <span>0x70</span>
+                        <span>0x80</span>
+                        <span>0x90</span>
+                        <span>0xA0</span>
+                        <span>0xB0</span>
+                        <span>0xC0</span>
+                        <span>0xD0</span>
+                        <span>0xE0</span>
+                        <span>0xF0</span>
+                      </div>
+                    </div>
+                </div>
+
+                {# ── Region breakdown ── #}
+                <div class="bh-section bh-regions">
+                    <div class="bh-region-title">Byte Region Breakdown</div>
+                    <div class="bh-region-grid">
+
+                      <div class="bh-region-item" title="0x00">
+                        <div class="bh-region-bar-wrap">
+                          <div class="bh-region-bar bh-reg--null"
+                               style="height:{{ analysis.bytehist_analysis.regions.null_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-region-name">NULL</span>
+                        <span class="bh-region-pct">{{ analysis.bytehist_analysis.regions.null_pct|floatformat:1 }}%</span>
+                      </div>
+
+                      <div class="bh-region-item" title="0x01–0x1F">
+                        <div class="bh-region-bar-wrap">
+                          <div class="bh-region-bar bh-reg--ctrl"
+                               style="height:{{ analysis.bytehist_analysis.regions.control_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-region-name">Control</span>
+                        <span class="bh-region-pct">{{ analysis.bytehist_analysis.regions.control_pct|floatformat:1 }}%</span>
+                      </div>
+
+                      <div class="bh-region-item" title="0x20–0x7E">
+                        <div class="bh-region-bar-wrap">
+                          <div class="bh-region-bar bh-reg--ascii"
+                               style="height:{{ analysis.bytehist_analysis.regions.ascii_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-region-name">ASCII</span>
+                        <span class="bh-region-pct">{{ analysis.bytehist_analysis.regions.ascii_pct|floatformat:1 }}%</span>
+                      </div>
+
+                      <div class="bh-region-item" title="0x7F">
+                        <div class="bh-region-bar-wrap">
+                          <div class="bh-region-bar bh-reg--del"
+                               style="height:{{ analysis.bytehist_analysis.regions.del_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-region-name">DEL</span>
+                        <span class="bh-region-pct">{{ analysis.bytehist_analysis.regions.del_pct|floatformat:1 }}%</span>
+                      </div>
+
+                      <div class="bh-region-item" title="0x80–0xFF">
+                        <div class="bh-region-bar-wrap">
+                          <div class="bh-region-bar bh-reg--high"
+                               style="height:{{ analysis.bytehist_analysis.regions.high_pct|floatformat:1 }}%"></div>
+                        </div>
+                        <span class="bh-region-name">High</span>
+                        <span class="bh-region-pct">{{ analysis.bytehist_analysis.regions.high_pct|floatformat:1 }}%</span>
+                      </div>
+
+                    </div>
+                </div>
+
+               {# ── Top / rarest bytes ── #}
+                <div class="bh-section bh-byte-tables">
+                    
+                    <div class="bh-byte-table">
+                    <div class="bh-btable-title"><i class="fas fa-sort-amount-down"></i> Most Frequent Bytes</div>
+                    <table class="bh-table">
+                        <thead><tr><th>Byte</th><th>Hex</th><th>Count</th><th>%</th><th></th></tr></thead>
+                        <tbody>
+                        {% for b in analysis.bytehist_analysis.top_bytes %}
+                        <tr>
+                            <td><code>{{ b.decimal }}</code></td>
+                            <td><code class="bh-hex">{{ b.hex }}</code></td>
+                            <td>{{ b.count|intcomma }}</td>
+                            <td>{{ b.pct|floatformat:2 }}%</td>
+                            <td>
+                            <div class="bh-inline-bar">
+                                <div class="bh-inline-fill bh-fill--top" style="width:{{ b.rel_pct }}%"></div>
+                            </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+
+                    <div class="bh-byte-table">
+                    <div class="bh-btable-title"><i class="fas fa-sort-amount-up"></i> Rarest Bytes</div>
+                    <table class="bh-table">
+                        <thead><tr><th>Byte</th><th>Hex</th><th>Count</th><th>%</th><th></th></tr></thead>
+                        <tbody>
+                        {% for b in analysis.bytehist_analysis.rare_bytes %}
+                        <tr>
+                            <td><code>{{ b.decimal }}</code></td>
+                            <td><code class="bh-hex">{{ b.hex }}</code></td>
+                            <td>{{ b.count|intcomma }}</td>
+                            <td>{{ b.pct|floatformat:4 }}%</td>
+                            <td>
+                            <div class="bh-inline-bar">
+                                <div class="bh-inline-fill bh-fill--rare" style="width:{{ b.rel_pct }}%"></div>
+                            </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            </div> 
+        </div> 
+    </div>
+</section>
+
+{# ═══════════════ STYLES ═══════════════ #}
+<style>
+.bytehist-panel {
+  --bh-bg:          #0f1117;
+  --bh-surface2:    #1e2433;
+  --bh-text:        #c8cdd8;
+  --bh-text-dim:    #6b748a;
+  --bh-accent:      #4f9cf9;
+  --bh-accent2:     #7b61ff;
+  --bh-green:       #34d399;
+  --bh-yellow:      #fbbf24;
+  --bh-orange:      #f97316;
+  --bh-red:         #ef4444;
+  --bh-cyan:        #22d3ee;
+  --bh-radius:      8px;
+  --bh-radius-sm:   4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  background: var(--bh-bg);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 20px;
+  margin-top: 16px;
+  color: var(--bh-text);
+}
+
+.bh-section {
+   border: 1px solid #2a3045 !important;
+    border-radius: var(--bh-radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    background: var(--bh-surface);
+}
+
+.bh-section.bh-metric-strip {
+    padding: 16px;
+    background: transparent;           
+    border: none;                      
+}
+
+.bh-section:last-child {
+    margin-bottom: 0;
+}
+
+/* ── Metric strip ── */
+.bh-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.bh-metric-card {
+  background: var(--bh-surface);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 14px 16px;
+  display: flex;
+  border: 1px solid #2a3045;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.bh-metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.bh-metric--entropy::before { background: var(--bh-accent); }
+.bh-metric--chi::before     { background: var(--bh-accent2); }
+.bh-metric--null::before    { background: var(--bh-yellow); }
+.bh-metric--printable::before { background: var(--bh-green); }
+.bh-metric--size::before    { background: var(--bh-cyan); }
+.bh-metric-card:hover       { border-color: var(--bh-accent); }
+
+.bytehist-panel .card-body {
+    padding: 20px;
+}
+
+.bh-metric-label {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--bh-text-dim);
+}
+.bh-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.1;
+}
+.bh-metric-unit {
+  font-size: 10px;
+  color: var(--bh-text-dim);
+}
+.bh-entropy-bar-wrap { margin-top: 8px; }
+.bh-entropy-bar-track {
+  height: 4px;
+  background: var(--bh-surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bh-entropy-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--bh-green), var(--bh-yellow), var(--bh-red));
+  border-radius: 2px;
+  transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+.bh-entropy-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--bh-text-dim);
+  margin-top: 2px;
+}
+.bh-chi-verdict {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+.bh-verdict--warn { background: rgba(251,191,36,.15); color: var(--bh-yellow); border: 1px solid rgba(251,191,36,.3); }
+.bh-verdict--ok   { background: rgba(52,211,153,.12); color: var(--bh-green);  border: 1px solid rgba(52,211,153,.3); }
+.bh-verdict--info { background: rgba(79,156,249,.12); color: var(--bh-accent); border: 1px solid rgba(79,156,249,.3); }
+
+/* ── Classification banner ── */
+.bh-classification-wrap {
+  background: var(--bh-surface);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.bh-classification {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.bh-cls--encrypted   { background: rgba(239,68,68,.15);  border: 1px solid rgba(239,68,68,.35);  color: #ff6b6b; }
+.bh-cls--compressed  { background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.3);  color: var(--bh-yellow); }
+.bh-cls--packed      { background: rgba(249,115,22,.13); border: 1px solid rgba(249,115,22,.3);  color: var(--bh-orange); }
+.bh-cls--native.code { background: rgba(79,156,249,.12); border: 1px solid rgba(79,156,249,.3);  color: var(--bh-accent); }
+.bh-cls--text\/script{ background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.3);  color: var(--bh-green); }
+.bh-cls--unknown     { background: rgba(107,116,138,.15);border: 1px solid rgba(107,116,138,.3); color: var(--bh-text-dim); }
+.bh-cls-icon         { font-size: 16px; }
+.bh-cls-desc         { font-weight: 400; font-size: 11px; color: var(--bh-text-dim); }
+.bh-cls-confidence   { font-size: 11px; color: var(--bh-text-dim); margin-left: auto; white-space: nowrap; }
+
+.bh-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+}
+.bh-indicator {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bh-ind--high   { background: rgba(239,68,68,.12);  color: #ff6b6b; border: 1px solid rgba(239,68,68,.25); }
+.bh-ind--medium { background: rgba(251,191,36,.10); color: var(--bh-yellow); border: 1px solid rgba(251,191,36,.2); }
+.bh-ind--low    { background: rgba(52,211,153,.10); color: var(--bh-green);  border: 1px solid rgba(52,211,153,.2); }
+.bh-ind--info   { background: rgba(79,156,249,.10); color: var(--bh-accent); border: 1px solid rgba(79,156,249,.2); }
+
+/* ── Chart section ── */
+.bh-canvas-wrap { 
+  position: relative;
+  height: 220px;  
+}
+canvas#bh-hist-canvas { 
+  width: 100% !important;
+}
+.bh-chart-section {
+  background: var(--bh-surface);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.bh-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.bh-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bh-text);
+  margin: 0;
+}
+.bh-chart-title small { color: var(--bh-text-dim); font-weight: 400; font-size: 11px; }
+.bh-chart-controls { display: flex; gap: 4px; }
+.bh-ctrl-btn {
+  background: var(--bh-surface2);
+  border: 1px solid var(--bh-border);
+  color: var(--bh-text-dim);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--bh-radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.bh-ctrl-btn:hover, .bh-ctrl-active {
+  background: var(--bh-accent);
+  border-color: var(--bh-accent);
+  color: #fff !important;
+}
+.bh-canvas-wrap { position: relative; }
+canvas#bh-hist-canvas { width: 100% !important; }
+
+/* ── Heatmap ── */
+.bh-heatmap-wrap { padding: 4px 0; }
+.bh-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--bh-text-dim);
+  margin-bottom: 8px;
+}
+.bh-heatmap-grad {
+  flex: 1;
+  max-width: 120px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #0f1117, #4f9cf9, #ef4444);
+}
+.bh-heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 2px;
+}
+.bh-heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  cursor: default;
+  transition: transform .1s;
+}
+.bh-heatmap-cell:hover { transform: scale(1.3); z-index: 10; }
+.bh-heatmap-axis {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  margin-top: 4px;
+}
+.bh-heatmap-axis span { font-size: 8px; color: var(--bh-text-dim); text-align: center; }
+
+/* ── Region breakdown ── */
+.bh-regions {
+  background: var(--bh-surface);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.bh-region-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--bh-text-dim);
+  margin-bottom: 12px;
+}
+.bh-region-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  align-items: end;
+  height: 80px;
+}
+.bh-region-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.bh-region-bar-wrap {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+.bh-region-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height .6s ease;
+}
+.bh-reg--null  { background: var(--bh-text-dim); }
+.bh-reg--ctrl  { background: var(--bh-orange); }
+.bh-reg--ascii { background: var(--bh-green); }
+.bh-reg--del   { background: var(--bh-yellow); }
+.bh-reg--high  { background: var(--bh-accent2); }
+.bh-region-name { font-size: 9px; color: var(--bh-text-dim); }
+.bh-region-pct  { font-size: 11px; font-weight: 700; color: var(--bh-text); }
+
+/* ── Byte frequency tables ── */
+.bh-section.bh-byte-tables {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid #2a3045;
+    border-radius: 8px;
+}
+
+.bh-byte-table {
+    border: 1px solid #2a3045;
+    border-radius: 6px;
+    padding: 16px;
+    height: 100%;          
+}
+
+.bh-btable-title {
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a3045;
+}
+
+.bh-byte-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.bh-byte-table {
+  background: var(--bh-surface);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius);
+  padding: 16px;
+}
+.bh-btable-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bh-text-dim);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.bh-table {
+  width: 100%;
+  font-size: 11px;
+  border-collapse: collapse;
+}
+.bh-table th {
+  text-align: left;
+  color: var(--bh-text-dim);
+  font-size: 10px;
+  letter-spacing: .06em;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--bh-border);
+}
+.bh-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(42,48,69,.5);
+  vertical-align: middle;
+}
+.bh-table tr:last-child td { border-bottom: none; }
+.bh-table code { font-family: inherit; }
+.bh-hex { color: var(--bh-accent); }
+.bh-inline-bar {
+  width: 80px;
+  height: 4px;
+  background: var(--bh-surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bh-inline-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+.bh-fill--top  { background: var(--bh-accent); }
+.bh-fill--rare { background: var(--bh-text-dim); }
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .bh-metric-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .bh-byte-tables {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .bh-metric-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bh-region-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .bh-classification-wrap {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .bh-indicators { justify-content: flex-start; }
+}
+</style>
+
+
+{# ═══════════════ JAVASCRIPT ═══════════════ #}
+<script>
+(function () {
+  /* ── Raw frequency data injected from Django ── */
+  const BH_FREQS  = {{ analysis.bytehist_analysis.frequencies|safe }};   /* array[256] */
+  const BH_TOTAL  = {{ analysis.bytehist_analysis.file_size }};
+  const BH_MAX    = Math.max(...BH_FREQS);
+
+  /* ── Chart.js instance ── */
+  let bhChart = null;
+  let bhCurrentView = 'bar';
+
+  /* Colour ramp for bars: cool→warm based on byte value */
+  function byteColor(i, alpha) {
+    const t = i / 255;
+    const r = Math.round(79  + (239 -  79) * t);
+    const g = Math.round(156 + ( 68 - 156) * t);
+    const b = Math.round(249 + ( 68 - 249) * t);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  const labels = Array.from({length:256}, (_,i) => '0x' + i.toString(16).toUpperCase().padStart(2,'0'));
+  const pcts   = BH_FREQS.map(v => BH_TOTAL > 0 ? (v / BH_TOTAL * 100) : 0);
+
+  function buildBarChart() {
+    const ctx = document.getElementById('bh-hist-canvas').getContext('2d');
+    if (bhChart) bhChart.destroy();
+    bhChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Frequency %',
+          data: pcts,
+          backgroundColor: labels.map((_,i) => byteColor(i, .75)),
+          borderColor:     labels.map((_,i) => byteColor(i, 1)),
+          borderWidth: 0,
+          barPercentage: 1.0,
+          categoryPercentage: 1.0,
+        }]
+      },
+      options: {
+        animation: { duration: 500 },
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const i = items[0].dataIndex;
+                const ascii = (i >= 32 && i <= 126) ? ` '${String.fromCharCode(i)}'` : '';
+                return `Byte ${labels[i]}${ascii}`;
+              },
+              label: (item) => {
+                const cnt = BH_FREQS[item.dataIndex];
+                return ` ${item.formattedValue}%  (${cnt.toLocaleString()} occurrences)`;
+              }
+            },
+            backgroundColor: '#1e2433',
+            borderColor: '#2a3045',
+            borderWidth: 1,
+            titleColor: '#fff',
+            bodyColor: '#c8cdd8',
+            titleFont: { family: 'JetBrains Mono, monospace', size: 12 },
+            bodyFont:  { family: 'JetBrains Mono, monospace', size: 11 },
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 16,
+              color: '#6b748a',
+              font: { size: 10, family: 'JetBrains Mono, monospace' },
+              callback: (_, i) => (i % 16 === 0) ? labels[i] : null,
+            },
+            grid: { color: 'rgba(42,48,69,.4)' }
+          },
+          y: {
+            ticks: {
+              color: '#6b748a',
+              font: { size: 10, family: 'JetBrains Mono, monospace' },
+              callback: v => v.toFixed(1) + '%',
+              maxTicksLimit: 6,
+            },
+            grid: { color: 'rgba(42,48,69,.4)' }
+          }
+        }
+      }
+    });
+  }
+
+  function buildAreaChart() {
+    const ctx = document.getElementById('bh-hist-canvas').getContext('2d');
+    if (bhChart) bhChart.destroy();
+    bhChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Frequency %',
+          data: pcts,
+          borderColor: 'rgba(79,156,249,.9)',
+          backgroundColor: (ctx) => {
+            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
+            gradient.addColorStop(0, 'rgba(79,156,249,.35)');
+            gradient.addColorStop(1, 'rgba(79,156,249,.02)');
+            return gradient;
+          },
+          fill: true,
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        animation: { duration: 500 },
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const i = items[0].dataIndex;
+                const ascii = (i >= 32 && i <= 126) ? ` '${String.fromCharCode(i)}'` : '';
+                return `Byte ${labels[i]}${ascii}`;
+              },
+              label: (item) => ` ${item.formattedValue}%  (${BH_FREQS[item.dataIndex].toLocaleString()})`
+            },
+            backgroundColor: '#1e2433',
+            borderColor: '#2a3045',
+            borderWidth: 1,
+            titleColor: '#fff',
+            bodyColor: '#c8cdd8',
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 16,
+              color: '#6b748a',
+              font: { size: 10 },
+              callback: (_, i) => (i % 16 === 0) ? labels[i] : null,
+            },
+            grid: { color: 'rgba(42,48,69,.4)' }
+          },
+          y: {
+            ticks: {
+              color: '#6b748a',
+              font: { size: 10 },
+              callback: v => v.toFixed(1) + '%',
+              maxTicksLimit: 6,
+            },
+            grid: { color: 'rgba(42,48,69,.4)' }
+          }
+        }
+      }
+    });
+  }
+
+  function buildHeatmap() {
+    const grid = document.getElementById('bh-heatmap-grid');
+    grid.innerHTML = '';
+    /* 16 cols × 16 rows = 256 cells */
+    BH_FREQS.forEach((freq, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'bh-heatmap-cell';
+      const t = BH_MAX > 0 ? freq / BH_MAX : 0;
+      /* dark blue → cyan → red */
+      const r = Math.round(15  + (239 -  15) * t);
+      const g = Math.round(17  + ( 68 -  17) * Math.max(0, t - .5) * 2);
+      const b = Math.round(23  + (249 -  23) * Math.max(0, 1 - t * 2));
+      cell.style.background = `rgb(${r},${g},${b})`;
+      const ascii = (i >= 32 && i <= 126) ? ` '${String.fromCharCode(i)}'` : '';
+      cell.title = `0x${i.toString(16).toUpperCase().padStart(2,'0')}${ascii}: ${freq.toLocaleString()} (${(pcts[i]).toFixed(3)}%)`;
+      grid.appendChild(cell);
+    });
+  }
+
+  /* ── Public toggle function ── */
+  window.bhSetView = function(view, btn) {
+    bhCurrentView = view;
+    document.querySelectorAll('.bh-ctrl-btn').forEach(b => b.classList.remove('bh-ctrl-active'));
+    btn.classList.add('bh-ctrl-active');
+
+    const chartWrap  = document.getElementById('bh-chart-wrap');
+    const heatWrap   = document.getElementById('bh-heatmap-wrap');
+
+    if (view === 'heat') {
+      chartWrap.style.display = 'none';
+      heatWrap.style.display  = 'block';
+      buildHeatmap();
+    } else {
+      chartWrap.style.display = 'block';
+      heatWrap.style.display  = 'none';
+      view === 'area' ? buildAreaChart() : buildBarChart();
+    }
+  };
+
+  /* ── Init on DOM ready ── */
+  function init() {
+    if (typeof Chart === 'undefined') {
+      /* Chart.js not loaded yet — wait */
+      setTimeout(init, 200);
+      return;
+    }
+    buildBarChart();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>

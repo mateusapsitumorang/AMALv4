@@ -136,12 +136,14 @@ class MISP(Report):
                 if block["ip"] not in whitelist:
                     ips.add(block["ip"])
 
-            for block in results["network"].get("dns", []):  # Added DNS
+            for block in results.get("network", {}).get("dns", []):  # Added DNS
                 if block.get("request", "") and (block["request"] not in whitelist):
-                    if block["request"] not in domains and block["request"] not in whitelist:
-                        if block["answers"]:
-                            domains[block["request"]] = block["answers"][0]["data"]
-                            ips.add(domain[block["answers"][0]["data"]])
+                    if block["request"] not in domains:
+                        if block.get("answers"):
+                            dns_ip = block["answers"][0].get("data", "")
+                            if dns_ip:
+                                domains[block["request"]] = dns_ip
+                                ips.add(dns_ip)
 
             # Added CAPE Addresses
             for section in results.get("CAPE", []) or []:
@@ -223,6 +225,7 @@ class MISP(Report):
             print("Missed dependency: poetry run pip install pymisp=2.4.144")
             return
 
+        log.error("DEBUG options: %s", dict(self.options))
         url = self.options.get("url", "")
         apikey = self.options.get("apikey", "")
 
@@ -277,7 +280,8 @@ class MISP(Report):
                 self.signature(results, event)
                 self.sample_hashes(results, event)
                 self.all_network(results, event)
-                self.dropped_files(results, event)
+                if self.options.get("dropped", False):
+                    self.dropped_files(results, event)
 
                 if upload_sample:
                     target = results.get("target", {})
@@ -317,6 +321,66 @@ class MISP(Report):
 
                 event.run_expansions()
                 self.misp.update_event(event)
+
+                # Get complete events from MISP (including related events)
+                try:
+                    full_event_dict = self.misp.get_event(event.id)
+                    full_event = full_event_dict.get("Event", {})
+                except Exception as e:
+                    log.warning("Failed to fetch full event: %s", e)
+                    full_event = {}
+
+                #Collect tags (take 'name' field)
+                tags_list = []
+                for tag in event.tags:
+                    try:
+                        tags_list.append(tag.name)
+                    except Exception:
+                        tags_list.append(str(tag))
+
+                # Collect file hashes of objects
+                file_hashes = {}
+                for obj in event.objects:
+                    if obj.name == "file":
+                        for attr in obj.attributes:
+                            if attr.object_relation in ("filename", "md5", "sha1", "sha256", "ssdeep"):
+                                file_hashes[attr.object_relation] = attr.value
+
+                # Collect attributes (mutex, url, ip, etc.)
+                attributes_list = []
+                for attr in event.attributes:
+                    attributes_list.append({
+                        "category": attr.category,
+                        "type": attr.type,
+                        "value": attr.value,
+                    })
+
+                # Collect related events
+                related_events = []
+                for rel in full_event.get("RelatedEvent", []):
+                    rel_event = rel.get("Event", {})
+                    related_events.append({
+                        "id": rel_event.get("id", ""),
+                        "info": rel_event.get("info", ""),
+                        "date": rel_event.get("date", ""),
+                        "org": rel_event.get("Orgc", {}).get("name", ""),
+                    })
+
+                misp_api_key = self.options.get("apikey", "")
+                results["misp"] = [{
+                    "eid": event.id,
+                    "uuid": str(event.uuid),
+                    'url': f'https://192.168.88.244/misp-goto/{event.id}/',
+                    "authkey": misp_api_key,
+                    "date": str(event.date),
+                    "info": event.info,
+                    "level": str(event.threat_level_id),
+                    "tags": tags_list,
+                    "attributes": attributes_list,
+                    "file_hashes": file_hashes,
+                    "related_events": related_events,
+                }]
+
 
                 # Make event public
                 if self.options.get("published", True):

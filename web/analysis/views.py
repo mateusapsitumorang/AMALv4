@@ -4,19 +4,35 @@
 
 import base64
 import collections
-import datetime
-import json
 import os
+import uuid
+from io import BytesIO
+import html as _html
+from PIL import Image, UnidentifiedImageError
 import subprocess
 import sys
 import tempfile
 import zipfile
+import socket
+import json
+from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 from contextlib import suppress
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 from wsgiref.util import FileWrapper
-
+from collections import defaultdict
+import joblib
+import numpy as np
+import requests as req
+import re as re_module
+import urllib3
+import re
+import requests
+from requests.adapters import HTTPAdapter
+import math
+import struct
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import BadRequest, PermissionDenied
@@ -24,6 +40,8 @@ from django.http import HttpResponse, HttpResponseRedirect, StreamingHttpRespons
 from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_safe
+from django.contrib.auth.models import User
+from notifications.models import Notification
 from rest_framework.decorators import api_view
 
 sys.path.append(settings.CUCKOO_PATH)
@@ -38,6 +56,17 @@ from lib.cuckoo.common.web_utils import category_all_files, my_rate_minutes, my_
 from lib.cuckoo.core.database import Database, TasksMixIn
 from lib.cuckoo.core.data.task import TASK_PENDING, Task
 from modules.reporting.report_doc import CHUNK_CALL_SIZE
+from lib.cuckoo.core.data.task import (
+    TASK_PENDING,
+    TASK_RUNNING,
+    TASK_DISTRIBUTED,
+    TASK_COMPLETED,
+    TASK_RECOVERED,
+    TASK_REPORTED,
+    TASK_FAILED_ANALYSIS,
+    TASK_FAILED_PROCESSING,
+    TASK_FAILED_REPORTING,
+)
 
 try:
     from django_ratelimit.decorators import ratelimit
@@ -53,6 +82,12 @@ try:
     import re2 as re
 except ImportError:
     import re
+
+try:
+    from dev_utils.mongodb import mongo_aggregate
+    HAVE_MONGO = True
+except ImportError:
+    HAVE_MONGO = False
 
 try:
     import requests
@@ -124,6 +159,41 @@ USE_SEVENZIP = False
 if reporting_cfg.compression.compressiontool == "7zip":
     USE_SEVENZIP = True
     SEVENZIP_PATH = reporting_cfg.compression.sevenzippath.strip() or "/usr/bin/7z"
+
+# Lazy loading, not blocking startup
+_ML_MODEL_PATH   = Path(CUCKOO_ROOT) / "ml_models" / "malware_classifier.pkl"
+_ML_ENCODER_PATH = Path(CUCKOO_ROOT) / "ml_models" / "label_encoder.pkl"
+_ML_FEATURES_PATH = Path(CUCKOO_ROOT) / "ml_models" / "feature_names.pkl"
+
+
+# Not yet loaded, will be loaded when first needed
+_ml_model    = None
+_ml_encoder  = None
+_ml_features = None
+ML_AVAILABLE = False
+
+def _load_ml_model():
+    """Load model once, lazy — no blocking server startup."""
+    global _ml_model, _ml_encoder, _ml_features, ML_AVAILABLE
+
+    # Already loaded
+    if ML_AVAILABLE:
+        return True
+
+    # Check file exists first before loading
+    if not (_ML_MODEL_PATH.exists() and _ML_ENCODER_PATH.exists() and _ML_FEATURES_PATH.exists()):
+        return False
+
+    try:
+        _ml_model    = joblib.load(_ML_MODEL_PATH)
+        _ml_encoder  = joblib.load(_ML_ENCODER_PATH)
+        _ml_features = joblib.load(_ML_FEATURES_PATH)
+        ML_AVAILABLE = True
+        print("[ML] Model loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ML] Failed to load model: {e}")
+        return False
 
 # Used for displaying enabled config options in Django UI
 enabledconf = {}
@@ -213,6 +283,15 @@ def get_analysis_info(db, id=-1, task=None):
         return None
 
     new = task.to_dict()
+    # Convert naive UTC datetimes to local timezone
+    _local_tz = ZoneInfo(settings.TIME_ZONE)
+    for _field in ("completed_on", "added_on", "started_on"):
+        if new.get(_field):
+            try:
+                _dt = datetime.strptime(new[_field], "%Y-%m-%d %H:%M:%S")
+                new[_field] = _dt.replace(tzinfo=dt_timezone.utc).astimezone(_local_tz).strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                pass
     if new["category"] in ("file", "pcap", "static") and new["sample_id"] is not None:
         new["sample"] = db.view_sample(new["sample_id"]).to_dict()
         filename = os.path.basename(new["target"])
@@ -225,6 +304,9 @@ def get_analysis_info(db, id=-1, task=None):
         machine = machine.strip(".vmx")
         machine = os.path.basename(machine)
         new.update({"machine": machine})
+
+    pdf_path = Path(settings.CUCKOO_PATH) / "storage" / "analyses" / str(new["id"]) / "reports" / "report.pdf"
+    new["has_pdf"] = pdf_path.exists()
 
     rtmp = False
 
@@ -323,8 +405,375 @@ def get_analysis_info(db, id=-1, task=None):
                 + quote("\x3d\x3d\x22%s\x3a%s\x22" % (settings.MOLOCH_NODE, new["id"]), safe="")
             )
 
+    if new.get("category") == "static":
+        current = new.get("malscore")
+        if current is None or current == 0 or current == 0.0:
+            derived = _compute_static_malscore(new)
+            if derived > 0:
+                new["malscore"] = derived        
+
     return new
 
+ALL_TACTICS = [
+    "Execution", "Persistence", "Privilege Escalation",
+    "Defense Evasion", "Credential Access", "Discovery",
+    "Lateral Movement", "Collection", "Command and Control",
+    "Exfiltration", "Impact", "Initial Access", "Reconnaissance"
+]
+
+HIGH_VALUE_TECHNIQUES = [
+    "T1486", "T1490", "T1489",  # Ransomware
+    "T1059", "T1071", "T1095", "T1105",  # RAT
+    "T1555", "T1056", "T1113", "T1115",  # Stealer
+    "T1210", "T1021", "T1570",  # Worm
+    "T1027", "T1055", "T1218",  # Dropper
+]
+
+def extract_features_from_report(report: dict) -> dict:
+    features = {}
+
+    # MITRE tactic counts
+    mitre_dict = report.get("mitre_attck", {})
+    for tactic in ALL_TACTICS:
+        techniques = mitre_dict.get(tactic, []) if isinstance(mitre_dict, dict) else []
+        unique_t = set(t.get("t_id") for t in techniques if t.get("t_id"))
+        features[f"tactic_{tactic.replace(' ', '_').lower()}"] = len(unique_t)
+
+    # Technique-level binary flags
+    all_technique_ids = set()
+    if isinstance(mitre_dict, dict):
+        for techniques in mitre_dict.values():
+            for t in techniques:
+                if t.get("t_id"):
+                    all_technique_ids.add(t["t_id"])
+    for t_id in HIGH_VALUE_TECHNIQUES:
+        features[f"technique_{t_id}"] = 1 if t_id in all_technique_ids else 0
+
+    # Network behavior
+    network = report.get("network", {})
+    features["network_http_count"]    = len(network.get("http", []))
+    features["network_dns_count"]     = len(network.get("dns", []))
+    features["network_tcp_count"]     = len(network.get("tcp", []))
+    features["network_udp_count"]     = len(network.get("udp", []))
+    features["network_domains_count"] = len(network.get("domains", []))
+    features["network_hosts_count"]   = len(network.get("hosts", []))
+    domains_ips = set(d["ip"] for d in network.get("domains", []))
+    hosts = set(h.get("ip", "") for h in network.get("hosts", []))
+    features["direct_ip_c2"] = len(hosts - domains_ips)
+
+    # File system behavior
+    summary = report.get("behavior", {}).get("summary", {})
+    features["files_written"]    = len(summary.get("write_files", []))
+    features["files_deleted"]    = len(summary.get("delete_files", []))
+    features["files_opened"]     = len(summary.get("read_files", []))
+    features["dirs_enumerated"]  = len(summary.get("directory_enumerated", []))
+
+    # Registry behavior
+    features["registry_written"] = len(summary.get("write_keys", []))
+    features["registry_deleted"] = len(summary.get("delete_keys", []))
+
+    # Process behavior
+    features["processes_injected"] = len(summary.get("executed_commands", []))
+    features["mutexes_created"]    = len(summary.get("mutexes", []))
+
+    # Signatures
+    signatures = report.get("signatures", [])
+    features["signature_count"] = len(signatures)
+    features["signature_severity_total"] = sum(s.get("severity", 1) for s in signatures)
+
+    # CAPE payloads
+    cape_data = report.get("CAPE", {})
+    features["cape_payloads"] = len(cape_data.get("payloads", [])) if isinstance(cape_data, dict) else 0
+
+    return features
+
+
+def _rule_based_classify(report: dict) -> tuple:
+    """
+    Fallback rule-based classification using MITRE ATT&CK tactics.
+    The maximum score per category is 100, then normalized relative to each category.
+    """
+    detected_tactics = set()
+    mitre_data = report.get("mitre_attck", {})
+    if isinstance(mitre_data, dict):
+        for tactic, techniques in mitre_data.items():
+            if techniques:
+                detected_tactics.add(tactic.lower().replace(" ", "-"))
+
+    sig_names = []
+    for sig in report.get("signatures", []) or []:
+        name = sig.get("name", "").lower()
+        if name:
+            sig_names.append(name)
+    sig_text = " ".join(sig_names)
+
+    # Each category max 100 points: 60 from tactics, 40 from keywords
+    MAX_TACTIC_SCORE   = 60
+    MAX_KEYWORD_SCORE  = 40
+
+    tactic_scores = {
+        "Ransomware":         0.0,
+        "Trojan/RAT":         0.0,
+        "Spyware/Stealer":    0.0,
+        "Worm/Propagator":    0.0,
+        "Downloader/Dropper": 0.0,
+    }
+
+    # --- tactics scoring (total max 60 / kategori) ---
+    tactic_rules = {
+        "Ransomware":         ["impact", "collection", "exfiltration"],
+        "Trojan/RAT":         ["command-and-control", "lateral-movement", "credential-access"],
+        "Spyware/Stealer":    ["collection", "credential-access", "exfiltration"],
+        "Worm/Propagator":    ["lateral-movement", "initial-access", "discovery"],
+        "Downloader/Dropper": ["execution", "defense-evasion", "persistence"],
+    }
+    tactic_weight = MAX_TACTIC_SCORE / 3  #20 / tactic
+
+    for category, tactics in tactic_rules.items():
+        for tactic in tactics:
+            if tactic in detected_tactics:
+                tactic_scores[category] += tactic_weight
+
+    # --- Keyword scoring (max 40 / category) ---
+    keyword_rules = {
+        "Ransomware":         ["ransom", "crypt", "encrypt", "locker"],
+        "Trojan/RAT":         ["rat", "backdoor", "remote", "trojan"],
+        "Spyware/Stealer":    ["stealer", "keylog", "spyware", "infostealer", "credential"],
+        "Worm/Propagator":    ["worm", "propagat", "spread", "network_scan"],
+        "Downloader/Dropper": ["dropper", "downloader", "loader", "inject"],
+    }
+
+    for category, keywords in keyword_rules.items():
+        matched = sum(1 for k in keywords if k in sig_text)
+        if matched > 0:
+            # Scale: 1 keyword = 20 points, 2+ keywords = 40 points (max)
+            tactic_scores[category] += min(matched * 20, MAX_KEYWORD_SCORE)
+
+    # --- Normalization to relative percentage ---
+    total = sum(tactic_scores.values())
+    radar_labels = list(tactic_scores.keys())
+
+    if total == 0:
+        # There are no indicators at all
+        radar_data = [5.0] * len(radar_labels)
+        return radar_labels, radar_data, "Unknown", 0.0, dict(zip(radar_labels, radar_data))
+
+    radar_data = [round((v / total) * 100, 2) for v in tactic_scores.values()]
+
+    top_idx       = int(max(range(len(radar_data)), key=lambda i: radar_data[i]))
+    primary_label = radar_labels[top_idx]
+    confidence    = radar_data[top_idx]
+
+    return radar_labels, radar_data, primary_label, confidence, dict(zip(radar_labels, radar_data))
+
+def _static_classify(report: dict) -> tuple:
+    radar_labels = ["Ransomware", "Trojan/RAT", "Spyware/Stealer", "Worm/Propagator", "Downloader/Dropper"]
+    scores = {label: 0.0 for label in radar_labels}
+
+    detections = report.get("detections", []) or []
+    detection_text = ""
+    if isinstance(detections, list):
+        detection_text = " ".join(
+            d.get("family", "").lower() for d in detections if isinstance(d, dict)
+        )
+    elif isinstance(detections, str):
+        detection_text = detections.lower()
+
+    signatures = report.get("signatures", []) or []
+    sig_text = " ".join(
+        (s.get("name", "") + " " + s.get("description", "")).lower()
+        for s in signatures
+    )
+    sig_severity_total = sum(s.get("severity", 1) for s in signatures)
+
+    vt_data = report.get("target", {}).get("file", {}).get("virustotal", {})
+    vt_text = ""
+    vt_ratio = 0.0
+    if isinstance(vt_data, dict):
+        if "scans" in vt_data:
+            vt_text = " ".join(
+                str(v.get("result", "")).lower()
+                for v in vt_data["scans"].values()
+                if v.get("result")
+            )
+        positives = vt_data.get("positives", 0)
+        total_vt = max(vt_data.get("total", 1), 1)
+        vt_ratio = positives / total_vt
+
+    all_text = detection_text + " " + sig_text + " " + vt_text
+
+    keyword_rules = {
+        "Ransomware": [
+            "ransom", "crypt", "encrypt", "locker", "lockbit", "ryuk",
+            "wannacry", "gandcrab", "phobos", "sodinokibi", "revil",
+            "blackcat", "hive", "conti",
+        ],
+        "Trojan/RAT": [
+            "rat", "backdoor", "remote", "trojan", "njrat", "asyncrat",
+            "remcos", "quasar", "darkcomet", "c2", "botnet", "agent",
+            "nanocore", "netwire", "blackshades",
+        ],
+        "Spyware/Stealer": [
+            "stealer", "keylog", "spyware", "infostealer", "credential",
+            "password", "harvest", "clipper", "formgrab", "vidar",
+            "redline", "raccoon", "azorult", "formbook", "hookbot",
+        ],
+        "Worm/Propagator": [
+            "worm", "propagat", "spread", "replicat", "usb", "autorun",
+            "conficker", "sality", "virut", "autoinfect",
+        ],
+        "Downloader/Dropper": [
+            "dropper", "downloader", "loader", "inject", "shellcode",
+            "packer", "obfuscat", "stage", "payload", "unpacker",
+            "installer", "stager", "dropper", "malware", "generic",
+            "suspicious", "malicious",
+        ],
+    }
+
+    for category, keywords in keyword_rules.items():
+        matched = sum(1 for k in keywords if k in all_text)
+        if matched > 0:
+            scores[category] += min(matched * 20.0, 70.0)
+
+    bytehist = report.get("bytehist_analysis") or {}
+    entropy = bytehist.get("entropy", 0.0)
+    bytehist_cls = bytehist.get("classification", "")
+
+    if bytehist_cls == "Encrypted":
+        scores["Ransomware"] += 20
+        scores["Downloader/Dropper"] += 15
+    elif bytehist_cls == "Packed":
+        scores["Downloader/Dropper"] += 25
+        scores["Trojan/RAT"] += 10
+    elif bytehist_cls == "Compressed":
+        scores["Downloader/Dropper"] += 12
+    elif entropy >= 7.5:
+        scores["Ransomware"] += 12
+        scores["Downloader/Dropper"] += 18
+    elif entropy >= 6.5:
+        scores["Downloader/Dropper"] += 8
+
+    if sig_severity_total > 0:
+        boost = min(sig_severity_total * 2.0, 20.0)
+        total_current = sum(scores.values())
+        if total_current > 0:
+            for label in radar_labels:
+                scores[label] += boost * (scores[label] / total_current)
+        else:
+            scores["Downloader/Dropper"] += boost
+
+    total_score = sum(scores.values())
+    if total_score == 0 and vt_ratio > 0:
+        vt_boost = vt_ratio * 100
+        scores["Downloader/Dropper"] = vt_boost * 0.40
+        scores["Trojan/RAT"]         = vt_boost * 0.25
+        scores["Spyware/Stealer"]    = vt_boost * 0.15
+        scores["Ransomware"]         = vt_boost * 0.12
+        scores["Worm/Propagator"]    = vt_boost * 0.08
+
+    total = sum(scores.values())
+    if total == 0:
+        radar_data = [20.0] * len(radar_labels)
+        return radar_labels, radar_data, "Unknown", 0.0, dict(zip(radar_labels, radar_data))
+
+    radar_data = [round((v / total) * 100, 2) for v in scores.values()]
+    top_idx = max(range(len(radar_data)), key=lambda i: radar_data[i])
+    primary_label = radar_labels[top_idx]
+    confidence = radar_data[top_idx]
+
+    return radar_labels, radar_data, primary_label, confidence, dict(zip(radar_labels, radar_data))
+
+
+def _compute_static_malscore(analysis_info: dict) -> float:
+    score = 0.0
+
+    detections = analysis_info.get("detections")
+    if detections:
+        if isinstance(detections, list) and len(detections) > 0:
+            score = max(score, min(3.0 + len(detections) * 0.5, 7.0))
+        elif isinstance(detections, str) and detections.strip():
+            score = max(score, 4.0)
+
+    vt_summary = analysis_info.get("virustotal_summary", "")
+
+    if not vt_summary:
+        _target = analysis_info.get("target", {})
+        if isinstance(_target, dict):
+            _file = _target.get("file", {})
+            if isinstance(_file, dict):
+                vt_summary = (
+                    _file.get("virustotal", {}).get("summary", "")
+                    if isinstance(_file.get("virustotal"), dict)
+                    else ""
+                )
+
+    if not vt_summary:
+        _url = analysis_info.get("url", {})
+        if isinstance(_url, dict):
+            vt_summary = (
+                _url.get("virustotal", {}).get("summary", "")
+                if isinstance(_url.get("virustotal"), dict)
+                else ""
+            )
+
+    if vt_summary and "/" in str(vt_summary):
+        try:
+            parts       = str(vt_summary).split("/")
+            vt_detected = int(parts[0].strip())
+            vt_total    = max(int(parts[1].strip()), 1)
+            vt_ratio    = vt_detected / vt_total
+            vt_score    = min(vt_ratio * 9.0, 9.0)
+            score       = max(score, vt_score)
+        except Exception:
+            pass
+
+    return round(min(score, 10.0), 1)
+
+def classify_malware_ml(report: dict) -> tuple:
+    """
+    Try the ML model first. If not available, fallback to rule-based.
+    Returns: (radar_labels, radar_data, primary_label, confidence_pct, all_proba)
+    """
+    # Try loading the ML model
+    if _load_ml_model():
+        try:
+            features = extract_features_from_report(report)
+            
+            # Check for missing features
+            missing = [f for f in _ml_features if f not in features]
+            if missing:
+                print(f"[ML] Warning: {len(missing)} fitur tidak ditemukan: {missing[:5]}...")
+            
+            feature_vector = [features.get(f, 0) for f in _ml_features]
+            
+            # Check dimensions before predicting
+            if len(feature_vector) != len(_ml_features):
+                raise ValueError(
+                    f"Dimensi tidak cocok: expected {len(_ml_features)}, got {len(feature_vector)}"
+                )
+            
+            X = np.array(feature_vector, dtype=np.float64).reshape(1, -1)
+            
+            # Check the value is not NaN/Inf
+            if not np.isfinite(X).all():
+                X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+                print("[ML] Warning: nilai NaN/Inf ditemukan, diganti 0")
+            
+            proba = _ml_model.predict_proba(X)[0]
+            labels = list(_ml_encoder.classes_)
+            radar_data = [round(float(p) * 100, 2) for p in proba]
+            top_idx = int(np.argmax(proba))
+            primary_label = labels[top_idx]
+            confidence = radar_data[top_idx]
+            return labels, radar_data, primary_label, confidence, dict(zip(labels, radar_data))
+
+        except Exception as e:
+            print(f"[ML] classify error: {e}")
+            # Fallback tp rule-based
+
+    # Fallback: rule-based
+    print("[ML] Model not available, using rule-based classification")
+    return _rule_based_classify(report)
 
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
@@ -435,7 +884,6 @@ def index(request, page=1):
             if page <= 1:
                 paging["show_file_prev"] = "hide"
 
-            # Added =: Fix page navigation for pages after the first page
             else:
                 paging["show_file_prev"] = "show"
             if db.view_errors(task.id):
@@ -504,6 +952,233 @@ def index(request, page=1):
             "files": analyses_files,
             "static": analyses_static,
             "urls": analyses_urls,
+            "pcaps": analyses_pcaps,
+            "paging": paging,
+            "config": enabledconf,
+        },
+    )
+
+@require_safe
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def analysis_files_partial(request, page=1):
+    page = int(page) if page else 1
+    if page == 0:
+        page = 1
+    off = (page - 1) * TASK_LIMIT
+
+    analyses_files = []
+    paging = {}
+
+    # Query recent file tasks
+    tasks_files = db.list_tasks(limit=TASK_LIMIT, offset=off, category="file", not_status=TASK_PENDING, tags_tasks_not_like="audit")
+
+    # Calculate pagination info
+    tasks_files_number = db.count_matching_tasks(category="file", not_status=TASK_PENDING) or 0
+    pages_files_num = int(tasks_files_number / TASK_LIMIT + 1) if tasks_files_number else 0
+
+    # Generate page range
+    files_pages = []
+    if pages_files_num < 11 or page < 6:
+        files_pages = list(range(1, min(10, pages_files_num) + 1))
+    elif page > 5:
+        files_pages = list(range(min(page - 5, pages_files_num - 10) + 1, min(page + 5, pages_files_num) + 1))
+
+    # Check for first/last page
+    buf = db.list_tasks(limit=1, category="file", not_status=TASK_PENDING, order_by=Task.added_on.asc())
+    first_file = buf[0].to_dict()["id"] if len(buf) == 1 else 0
+
+    paging["show_file_next"] = "show" if tasks_files_number > off + TASK_LIMIT else "hide"
+    paging["show_file_prev"] = "show" if page > 1 else "hide"
+    paging["next_page"] = str(page + 1)
+    paging["prev_page"] = str(page - 1)
+    paging["files_page_range"] = files_pages
+    paging["current_page"] = page
+
+    # Build analyses list
+    if tasks_files:
+        for task in tasks_files:
+            new = get_analysis_info(db, task=task)
+            if db.view_errors(task.id):
+                new["errors"] = True
+            analyses_files.append(new)
+    
+    analyses_files.sort(key=lambda x: x["id"], reverse=True)
+
+    return render(
+        request,
+        "analysis/files_partial.html",
+        {
+            "files": analyses_files,
+            "paging": paging,
+            "config": enabledconf,
+        },
+    )
+
+
+@require_safe
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def analysis_static_partial(request, page=1):
+    page = int(page) if page else 1
+    if page == 0:
+        page = 1
+    off = (page - 1) * TASK_LIMIT
+
+    analyses_static = []
+    paging = {}
+
+    # Query recent static tasks
+    tasks_static = db.list_tasks(limit=TASK_LIMIT, offset=off, category="static", not_status=TASK_PENDING)
+
+    # Calculate pagination info
+    tasks_static_number = db.count_matching_tasks(category="static", not_status=TASK_PENDING) or 0
+    pages_static_num = int(tasks_static_number / TASK_LIMIT + 1) if tasks_static_number else 0
+
+    # Generate page range
+    static_pages = []
+    if pages_static_num < 11 or page < 6:
+        static_pages = list(range(1, min(10, pages_static_num) + 1))
+    elif page > 5:
+        static_pages = list(range(min(page - 5, pages_static_num - 10) + 1, min(page + 5, pages_static_num) + 1))
+
+    # Check for first/last page
+    buf = db.list_tasks(limit=1, category="static", not_status=TASK_PENDING, order_by=Task.added_on.asc())
+    first_static = buf[0].to_dict()["id"] if len(buf) == 1 else 0
+
+    paging["show_static_next"] = "show" if tasks_static_number > off + TASK_LIMIT else "hide"
+    paging["show_static_prev"] = "show" if page > 1 else "hide"
+    paging["next_page"] = str(page + 1)
+    paging["prev_page"] = str(page - 1)
+    paging["static_page_range"] = static_pages
+    paging["current_page"] = page
+
+    # Build analyses list
+    if tasks_static:
+        for task in tasks_static:
+            new = get_analysis_info(db, task=task)
+            if db.view_errors(task.id):
+                new["errors"] = True
+            analyses_static.append(new)
+    
+    analyses_static.sort(key=lambda x: x["id"], reverse=True)
+
+    return render(
+        request,
+        "analysis/static_partial.html",
+        {
+            "static": analyses_static,
+            "paging": paging,
+            "config": enabledconf,
+        },
+    )
+
+
+@require_safe
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def analysis_urls_partial(request, page=1):
+    page = int(page) if page else 1
+    if page == 0:
+        page = 1
+    off = (page - 1) * TASK_LIMIT
+
+    analyses_urls = []
+    paging = {}
+
+    # Query recent URL tasks
+    tasks_urls = db.list_tasks(limit=TASK_LIMIT, offset=off, category="url", not_status=TASK_PENDING)
+
+    # Calculate pagination info
+    tasks_urls_number = db.count_matching_tasks(category="url", not_status=TASK_PENDING) or 0
+    pages_urls_num = int(tasks_urls_number / TASK_LIMIT + 1) if tasks_urls_number else 0
+
+    # Generate page range
+    urls_pages = []
+    if pages_urls_num < 11 or page < 6:
+        urls_pages = list(range(1, min(10, pages_urls_num) + 1))
+    elif page > 5:
+        urls_pages = list(range(min(page - 5, pages_urls_num - 10) + 1, min(page + 5, pages_urls_num) + 1))
+
+    # Check for first/last page
+    buf = db.list_tasks(limit=1, category="url", not_status=TASK_PENDING, order_by=Task.added_on.asc())
+    first_url = buf[0].to_dict()["id"] if len(buf) == 1 else 0
+
+    paging["show_url_next"] = "show" if tasks_urls_number > off + TASK_LIMIT else "hide"
+    paging["show_url_prev"] = "show" if page > 1 else "hide"
+    paging["next_page"] = str(page + 1)
+    paging["prev_page"] = str(page - 1)
+    paging["urls_page_range"] = urls_pages
+    paging["current_page"] = page
+
+    # Build analyses list
+    if tasks_urls:
+        for task in tasks_urls:
+            new = get_analysis_info(db, task=task)
+            if db.view_errors(task.id):
+                new["errors"] = True
+            analyses_urls.append(new)
+    
+    analyses_urls.sort(key=lambda x: x["id"], reverse=True)
+
+    return render(
+        request,
+        "analysis/urls_partial.html",
+        {
+            "urls": analyses_urls,
+            "paging": paging,
+            "config": enabledconf,
+        },
+    )
+
+
+@require_safe
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def analysis_pcaps_partial(request, page=1):
+    page = int(page) if page else 1
+    if page == 0:
+        page = 1
+    off = (page - 1) * TASK_LIMIT
+
+    analyses_pcaps = []
+    paging = {}
+
+    # Query recent PCAP tasks
+    tasks_pcaps = db.list_tasks(limit=TASK_LIMIT, offset=off, category="pcap", not_status=TASK_PENDING)
+
+    # Calculate pagination info
+    tasks_pcaps_number = db.count_matching_tasks(category="pcap", not_status=TASK_PENDING) or 0
+    pages_pcaps_num = int(tasks_pcaps_number / TASK_LIMIT + 1) if tasks_pcaps_number else 0
+
+    # Generate page range
+    pcaps_pages = []
+    if pages_pcaps_num < 11 or page < 6:
+        pcaps_pages = list(range(1, min(10, pages_pcaps_num) + 1))
+    elif page > 5:
+        pcaps_pages = list(range(min(page - 5, pages_pcaps_num - 10) + 1, min(page + 5, pages_pcaps_num) + 1))
+
+    # Check for first/last page
+    buf = db.list_tasks(limit=1, category="pcap", not_status=TASK_PENDING, order_by=Task.added_on.asc())
+    first_pcap = buf[0].to_dict()["id"] if len(buf) == 1 else 0
+
+    paging["show_pcap_next"] = "show" if tasks_pcaps_number > off + TASK_LIMIT else "hide"
+    paging["show_pcap_prev"] = "show" if page > 1 else "hide"
+    paging["next_page"] = str(page + 1)
+    paging["prev_page"] = str(page - 1)
+    paging["pcaps_page_range"] = pcaps_pages
+    paging["current_page"] = page
+
+    # Build analyses list
+    if tasks_pcaps:
+        for task in tasks_pcaps:
+            new = get_analysis_info(db, task=task)
+            if db.view_errors(task.id):
+                new["errors"] = True
+            analyses_pcaps.append(new)
+    
+    analyses_pcaps.sort(key=lambda x: x["id"], reverse=True)
+
+    return render(
+        request,
+        "analysis/pcaps_partial.html",
+        {
             "pcaps": analyses_pcaps,
             "paging": paging,
             "config": enabledconf,
@@ -748,6 +1423,46 @@ def load_files(request, task_id, category):
         if category == "debugger":
             ajax_response["debugger_logs"] = debugger_logs
         elif category == "network":
+            # Enrich hosts for AJAX network tab as well (Quick Overview uses a different path).
+            _hosts = ajax_response.get("network", {}).get("hosts", [])
+            _missing_geo_ips = [h["ip"] for h in _hosts if not h.get("country_code")]
+            if _missing_geo_ips:
+                try:
+                    _payload = [{"query": ip, "fields": "status,country,countryCode,as,org,lat,lon,query"} for ip in _missing_geo_ips[:100]]
+                    _geo_resp = requests.post("http://ip-api.com/batch", json=_payload, timeout=5)
+                    if _geo_resp.status_code == 200:
+                        _geo_map = {}
+                        for _item in _geo_resp.json():
+                            if _item.get("status") != "success":
+                                continue
+                            _raw_as = _item.get("as", "")
+                            _parts = _raw_as.split(" ", 1)
+                            _geo_map[_item["query"]] = {
+                                "country_name": _item.get("country", "unknown").lower(),
+                                "country_code": _item.get("countryCode", "").lower(),
+                                "asn": _parts[0] if _parts else "",
+                                "asn_name": _parts[1] if len(_parts) > 1 else _item.get("org", ""),
+                                "latitude": _item.get("lat"),
+                                "longitude": _item.get("lon"),
+                            }
+
+                        for _host in _hosts:
+                            _geo = _geo_map.get(_host.get("ip"))
+                            if not _geo:
+                                continue
+                            _host["country_name"] = _geo["country_name"]
+                            _host["country_code"] = _geo["country_code"]
+                            if not _host.get("asn"):
+                                _host["asn"] = _geo["asn"]
+                            if not _host.get("asn_name"):
+                                _host["asn_name"] = _geo["asn_name"]
+                            if not _host.get("latitude"):
+                                _host["latitude"] = _geo.get("latitude")
+                            if not _host.get("longitude"):
+                                _host["longitude"] = _geo.get("longitude")
+                except Exception:
+                    pass
+
             ajax_response["domainlookups"] = {i["domain"]: i["ip"] for i in ajax_response.get("network", {}).get("domains", {})}
             ajax_response["suricata"] = data.get("suricata", {})
             ajax_response["cif"] = data.get("cif", [])
@@ -1461,6 +2176,232 @@ def split_signature_calls(report):
 
     return report
 
+def _bytehist_classify(entropy: float, chi_sq: float,
+                       null_pct: float, printable_pct: float,
+                       high_pct: float) -> dict:
+    """
+    Heuristic classification from byte-distribution statistics.
+ 
+    Returns a dict with:
+        classification      – human-readable label
+        classification_desc – short explanation
+        confidence          – int 0-100
+        chi_verdict         – 'random' | 'normal' | 'skewed'
+        indicators          – list of {text, level, icon}
+    """
+    indicators = []
+ 
+    # ── Chi-square verdict ───────────────────────────────────────────────────
+    # For df=255:  χ² < 210 → very non-random  |  > 300 → very random
+    if chi_sq > 300:
+        chi_verdict = "random"
+    elif chi_sq < 210:
+        chi_verdict = "skewed"
+    else:
+        chi_verdict = "normal"
+ 
+    # ── Build indicator list ─────────────────────────────────────────────────
+    if entropy >= 7.8:
+        indicators.append({"text": "High entropy", "level": "high", "icon": "fire"})
+    elif entropy >= 7.2:
+        indicators.append({"text": "Elevated entropy", "level": "medium", "icon": "exclamation-triangle"})
+    else:
+        indicators.append({"text": "Low entropy", "level": "low", "icon": "check-circle"})
+ 
+    if null_pct > 20:
+        indicators.append({"text": f"High NULL density ({null_pct:.1f}%)", "level": "medium", "icon": "dot-circle"})
+    if printable_pct > 80:
+        indicators.append({"text": "Mostly printable", "level": "low", "icon": "file-alt"})
+    if high_pct > 50:
+        indicators.append({"text": "High-byte dominated", "level": "medium", "icon": "chart-bar"})
+    if chi_verdict == "random":
+        indicators.append({"text": "Uniform distribution (χ²)", "level": "high", "icon": "random"})
+    elif chi_verdict == "skewed":
+        indicators.append({"text": "Skewed distribution (χ²)", "level": "info", "icon": "align-left"})
+ 
+    # ── Primary classification ───────────────────────────────────────────────
+    cls  = "Unknown"
+    desc = "No strong indicators found."
+    conf = 40
+ 
+    if entropy >= 7.8 and chi_verdict == "random":
+        cls  = "Encrypted"
+        desc = "Near-perfect byte uniformity suggests encryption or strong packing."
+        conf = 90
+    elif entropy >= 7.4 and high_pct > 40:
+        cls  = "Compressed"
+        desc = "High entropy with elevated high-byte presence is typical of compressed data."
+        conf = 80
+    elif entropy >= 6.8 and chi_verdict in ("random", "normal"):
+        cls  = "Packed"
+        desc = "Elevated entropy may indicate runtime packing or obfuscation."
+        conf = 70
+    elif printable_pct > 85 and entropy < 5.5:
+        cls  = "Text/Script"
+        desc = "High printable-byte ratio and low entropy characteristic of plain text."
+        conf = 85
+    elif null_pct > 30 and entropy < 5.0:
+        cls  = "Native Code"
+        desc = "NULL-heavy with low entropy — typical PE/ELF native binary patterns."
+        conf = 75
+    else:
+        cls  = "Native Code"
+        desc = "Mixed byte distribution consistent with compiled binary data."
+        conf = 55
+ 
+    return {
+        "classification":      cls,
+        "classification_desc": desc,
+        "confidence":          conf,
+        "chi_verdict":         chi_verdict,
+        "indicators":          indicators,
+    }
+ 
+ 
+def compute_bytehist_analysis(file_path: str) -> dict | None:
+    """
+    Reads a binary file and computes a full byte-histogram analysis dict
+    ready to be passed directly to the Django template as
+    `analysis['bytehist_analysis']`.
+ 
+    Returns None if the file cannot be read or is empty.
+    """
+    try:
+        with open(file_path, "rb") as fh:
+            raw = fh.read()
+    except (OSError, IOError) as exc:
+        print(f"[bytehist] Cannot read file {file_path}: {exc}")
+        return None
+ 
+    file_size = len(raw)
+    if file_size == 0:
+        return None
+ 
+    # ── Byte frequencies ─────────────────────────────────────────────────────
+    freqs = [0] * 256
+    for byte in raw:
+        freqs[byte] += 1
+ 
+    # ── Shannon entropy ───────────────────────────────────────────────────────
+    entropy = 0.0
+    for count in freqs:
+        if count > 0:
+            p = count / file_size
+            entropy -= p * math.log2(p)
+    entropy_pct = (entropy / 8.0) * 100.0  # normalised to 0-100 %
+ 
+    # ── Chi-square ────────────────────────────────────────────────────────────
+    expected = file_size / 256.0
+    chi_sq   = sum((c - expected) ** 2 / expected for c in freqs if expected > 0)
+ 
+    # ── Region percentages ────────────────────────────────────────────────────
+    null_count      = freqs[0]
+    control_count   = sum(freqs[1:32])          # 0x01–0x1F
+    ascii_count     = sum(freqs[32:127])         # 0x20–0x7E
+    del_count       = freqs[127]
+    high_count      = sum(freqs[128:256])        # 0x80–0xFF
+ 
+    null_pct      = null_count    / file_size * 100
+    control_pct   = control_count / file_size * 100
+    ascii_pct     = ascii_count   / file_size * 100
+    del_pct       = del_count     / file_size * 100
+    high_pct      = high_count    / file_size * 100
+ 
+    printable_pct = ascii_pct   # alias used in classification
+ 
+    # ── Top / rare bytes ──────────────────────────────────────────────────────
+    max_count = max(freqs) or 1
+    sorted_by_count = sorted(enumerate(freqs), key=lambda x: x[1], reverse=True)
+ 
+    def _make_row(idx, count, rel_max):
+        return {
+            "decimal": idx,
+            "hex":     f"0x{idx:02X}",
+            "count":   count,
+            "pct":     count / file_size * 100,
+            "rel_pct": count / rel_max * 100,
+        }
+ 
+    top_bytes  = [_make_row(i, c, max_count) for i, c in sorted_by_count[:10]]
+    # Rarest: exclude bytes with 0 occurrences unless the file is very small
+    nonzero = [(i, c) for i, c in sorted_by_count if c > 0]
+    rare_bytes = [_make_row(i, c, max_count) for i, c in reversed(nonzero[-10:])]
+ 
+    # ── Classification ────────────────────────────────────────────────────────
+    cls_info = _bytehist_classify(entropy, chi_sq, null_pct, printable_pct, high_pct)
+ 
+    return {
+        # scalars
+        "entropy":      round(entropy, 6),
+        "entropy_pct":  round(entropy_pct, 2),
+        "chi_square":   round(chi_sq, 2),
+        "file_size":    file_size,
+        "null_pct":     round(null_pct, 4),
+        "printable_pct":round(printable_pct, 4),
+ 
+        # classification
+        "classification":      cls_info["classification"],
+        "classification_desc": cls_info["classification_desc"],
+        "confidence":          cls_info["confidence"],
+        "chi_verdict":         cls_info["chi_verdict"],
+        "indicators":          cls_info["indicators"],
+ 
+        # chart data  — serialised as JSON-safe Python list (Django template: |safe)
+        "frequencies": freqs,           # list[256]  ← template uses |safe
+ 
+        # region breakdown
+        "regions": {
+            "null_pct":     round(null_pct,    2),
+            "control_pct":  round(control_pct, 2),
+            "ascii_pct":    round(ascii_pct,   2),
+            "del_pct":      round(del_pct,     2),
+            "high_pct":     round(high_pct,    2),
+        },
+ 
+        # top/rare byte tables
+        "top_bytes":  top_bytes,
+        "rare_bytes": rare_bytes,
+    }
+
+def _inject_bytehist_into_report(report: dict) -> None:
+    """
+    Resolves the sample file path from the report dict and attaches
+    `bytehist_analysis` to the report in-place.
+    Call this right after `report = split_signature_calls(report)`.
+    """
+    binary_path = None
+ 
+    # Priority 1: target file SHA-256 → storage/binaries/<sha256>
+    sha256 = (
+        report.get("target", {})
+              .get("file", {})
+              .get("sha256", "")
+    )
+    if sha256:
+        candidate = os.path.join(CUCKOO_ROOT, "storage", "binaries", sha256)
+        if path_exists(candidate):
+            binary_path = candidate
+ 
+    # Priority 2: raw target path recorded in the report
+    if not binary_path:
+        raw_path = report.get("target", {}).get("file", {}).get("path", "")
+        if raw_path and path_exists(raw_path) and _path_safe(raw_path):
+            binary_path = raw_path
+ 
+    # Priority 3: analyses/<id>/binary symlink (static analysis tasks)
+    if not binary_path:
+        task_id = report.get("info", {}).get("id", "")
+        if task_id:
+            candidate = os.path.join(
+                ANALYSIS_BASE_PATH, "analyses", str(task_id), "binary"
+            )
+            if path_exists(candidate):
+                binary_path = candidate
+ 
+    if binary_path and _path_safe(binary_path):
+        report["bytehist_analysis"] = compute_bytehist_analysis(binary_path)
+    else:
+        report["bytehist_analysis"] = None
 
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
@@ -1469,6 +2410,7 @@ def split_signature_calls(report):
 def report(request, task_id):
     network_report = False
     report = {}
+
     if enabledconf["mongodb"]:
         report = mongo_find_one(
             "analysis",
@@ -1484,29 +2426,67 @@ def report(request, task_id):
         )
         report = split_signature_calls(report)
 
+        _inject_bytehist_into_report(report)
+
     if es_as_db:
         query = es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id))["hits"]["hits"][0]
         report = query["_source"]
-        # Extract out data for Admin tab in the analysis page
         network_report = es.search(
             index=get_analysis_index(),
             query=get_query_by_info_id(task_id),
             _source=["network.domains", "network.dns", "network.hosts"],
         )["hits"]["hits"][0]["_source"]
-
-        # Extract out data for Admin tab in the analysis page
         esdata = {"index": query["_index"], "id": query["_id"]}
         report["es"] = esdata
+
     if not report:
         if DISABLED_WEB:
             msg = "You need to enable Mongodb/ES to be able to use WEBGUI to see the analysis"
         else:
             msg = "The specified analysis does not exist or not finished yet."
-
         return render(request, "error.html", {"error": msg})
 
+    # ML Classification
+    _report_category = report.get("info", {}).get("category", "file")
+
+    if _report_category == "pcap":
+        radar_labels, radar_data, primary_classification, ml_confidence, all_proba = [], [], None, 0.0, {}
+        print(f"[ML CLASSIFICATION] task={task_id} → Skipped (category: pcap)")
+
+    elif _report_category == "static":
+        radar_labels, radar_data, primary_classification, ml_confidence, all_proba = _static_classify(report)
+        print(
+            f"[ML CLASSIFICATION] task={task_id} → "
+            f"{primary_classification} ({ml_confidence:.1f}% confidence) [static classifier]"
+        )
+
+    else:
+        radar_labels, radar_data, primary_classification, ml_confidence, all_proba = classify_malware_ml(report)
+        print(
+            f"[ML CLASSIFICATION] task={task_id} → "
+            f"{primary_classification} ({ml_confidence:.1f}% confidence) [category: {_report_category}]"
+        )
+
+  
+    if _report_category == "static":
+        _cur_ms = float(report.get("malscore") or 0.0)
+        if _cur_ms == 0.0:
+            _derived_ms = _compute_static_malscore(report)
+            if _derived_ms > 0:
+                report["malscore"] = _derived_ms
+                _cur_ms = _derived_ms
+        if _cur_ms > 6.0:
+            report["malstatus"] = "Malicious"
+        elif _cur_ms > 2.0:
+            report["malstatus"] = "Suspicious"
+        elif _cur_ms > 0:
+            report["malstatus"] = "Clean"
+        
+    # Other Data Processing
     if isinstance(report.get("CAPE"), dict) and report.get("CAPE", {}).get("configs", {}):
         report["malware_conf"] = report["CAPE"]["configs"]
+
+    # Reset data to be refilled from the database
     report["CAPE"] = 0
     report["dropped"] = 0
     report["procdump"] = 0
@@ -1535,13 +2515,12 @@ def report(request, task_id):
                 )[0][f"{value}_size"]
             except Exception:
                 report[value] = 0
-
         elif es_as_db:
             try:
                 report[value] = len(
                     es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id), _source=[f"{key}.sha256"])["hits"][
                         "hits"
-                    ][0]["_source"].get(key)
+                    ][0]["_source"].get(key, [])
                 )
             except Exception as e:
                 print(e)
@@ -1559,7 +2538,6 @@ def report(request, task_id):
         print(e)
 
     reports_exist = {}
-    # check if we allow dl reports only to specific users
     reporting_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "reports")
     if path_exists(reporting_path):
         for f in os.listdir(reporting_path):
@@ -1583,6 +2561,24 @@ def report(request, task_id):
                 reports_exist["litereport"] = True
             elif f == "cents.json":
                 reports_exist["cents"] = True
+    
+    guac_recording_name = None
+    guac_recording_exists = False
+
+    if enabledconf.get("guacamole"):
+        _guacd_path = Config("cuckoo").guacamole.get(
+            "guacd_recording_path",
+            "/opt/CAPEv2/storage/guacrecordings"
+        )
+        import glob as _glob
+        _pattern = os.path.join(_guacd_path, f"{task_id}_*")
+        _matches = [
+            f for f in _glob.glob(_pattern)
+            if not re.search(r'\.\d+$', os.path.basename(f))
+        ]
+        if _matches:
+            guac_recording_exists = True
+            guac_recording_name = os.path.basename(_matches[0])
 
     debugger_log_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "debugger")
     if path_exists(debugger_log_path) and os.listdir(debugger_log_path):
@@ -1608,13 +2604,11 @@ def report(request, task_id):
 
     vba2graph = False
     vba2graph_dict_content = {}
-    # we don't want to do this for urls but we might as well check that the target exists
     if report.get("target", {}).get("file", {}).get("sha256"):
         vba2graph = processing_cfg.vba2graph.enabled
         vba2graph_svg_path = os.path.join(
             CUCKOO_ROOT, "storage", "analyses", str(task_id), "vba2graph", "svg", report["target"]["file"]["sha256"] + ".svg"
         )
-
         if path_exists(vba2graph_svg_path) and _path_safe(vba2graph_svg_path):
             vba2graph_dict_content.setdefault(report["target"]["file"]["sha256"], Path(vba2graph_svg_path).read_text())
 
@@ -1628,9 +2622,44 @@ def report(request, task_id):
 
     domainlookups = {}
     iplookups = {}
-    if network_report.get("network", {}):
+    if network_report and network_report.get("network", {}):
         report["network"] = network_report["network"]
-
+        # Enrich hosts that are missing geo data (old reports or failed enrichment)
+        _hosts = report["network"].get("hosts", [])
+        _missing_geo_ips = [h["ip"] for h in _hosts if not h.get("country_code")]
+        if _missing_geo_ips:
+            try:
+                _payload = [{"query": ip, "fields": "status,country,countryCode,as,org,lat,lon,query"} for ip in _missing_geo_ips[:100]]
+                _geo_resp = requests.post("http://ip-api.com/batch", json=_payload, timeout=5)
+                if _geo_resp.status_code == 200:
+                    _geo_map = {}
+                    for _item in _geo_resp.json():
+                        if _item.get("status") == "success":
+                            _raw_as = _item.get("as", "")
+                            _parts = _raw_as.split(" ", 1)
+                            _geo_map[_item["query"]] = {
+                                "country_name": _item.get("country", "unknown").lower(),
+                                "country_code": _item.get("countryCode", "").lower(),
+                                "asn": _parts[0] if _parts else "",
+                                "asn_name": _parts[1] if len(_parts) > 1 else _item.get("org", ""),
+                                "latitude": _item.get("lat"),
+                                "longitude": _item.get("lon"),
+                            }
+                    for _h in _hosts:
+                        if _h["ip"] in _geo_map:
+                            _g = _geo_map[_h["ip"]]
+                            _h["country_name"] = _g["country_name"]
+                            _h["country_code"] = _g["country_code"]
+                            if not _h.get("asn"):
+                                _h["asn"] = _g["asn"]
+                            if not _h.get("asn_name"):
+                                _h["asn_name"] = _g["asn_name"]
+                            if not _h.get("latitude"):
+                                _h["latitude"] = _g.get("latitude")
+                            if not _h.get("longitude"):
+                                _h["longitude"] = _g.get("longitude")
+            except Exception:
+                pass
         if "domains" in network_report["network"]:
             domainlookups = dict((i["domain"], i["ip"]) for i in network_report["network"]["domains"])
             iplookups = dict((i["ip"], i["domain"]) for i in network_report["network"]["domains"])
@@ -1659,22 +2688,9 @@ def report(request, task_id):
         total = 0.0
         for item in report.get("statistics", {}).get(stats_category, []) or []:
             total += item["time"]
-
         stats_total["total"] += total
         stats_total[stats_category] = "{:.2f}".format(total)
-
     stats_total["total"] = "{:.2f}".format(stats_total["total"])
-    if HAVE_REQUEST and enabledconf["distributed"]:
-        try:
-            res = requests.get(f"http://127.0.0.1:9003/task/{task_id}", timeout=3, verify=False)
-            if res and res.ok:
-                res = res.json()
-                if "name" in res:
-                    report["distributed"] = {}
-                    report["distributed"]["name"] = res["name"]
-                    report["distributed"]["task_id"] = res["task_id"]
-        except Exception as e:
-            print(e)
 
     existent_tasks = {}
     if web_cfg.general.get("existent_tasks", False) and report.get("target", {}).get("file", {}).get("sha256"):
@@ -1684,10 +2700,201 @@ def report(request, task_id):
                 continue
             existent_tasks[record["info"]["id"]] = record.get("detections")
 
-    # process log per task if enabled:
     process_log_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "process.log")
     if web_cfg.general.expose_process_log and path_exists(process_log_path) and path_get_size(process_log_path):
         report["process_log"] = path_read_file(process_log_path, mode="text")
+
+    if report and "info" in report:
+        _raw_custom = report["info"].get("custom")
+        
+        if isinstance(_raw_custom, str) and _raw_custom.strip():
+            try:
+                report["info"]["custom"] = json.loads(_raw_custom)
+            except Exception:
+                report["info"]["custom"] = {"submitter": _raw_custom}
+        elif not isinstance(_raw_custom, dict):
+            report["info"]["custom"] = {}
+
+        submitter_uname = report["info"]["custom"].get("submitter", "")
+
+        if not submitter_uname:
+            submitter_uname = report["info"].get("owner") or report["info"].get("user_id", "")
+            if submitter_uname:
+                report["info"]["custom"]["submitter"] = str(submitter_uname)
+
+        if submitter_uname:
+            try:
+                if str(submitter_uname).isdigit():
+                    submitter_user = User.objects.filter(id=int(submitter_uname)).first()
+                else:
+                    submitter_user = User.objects.filter(username=submitter_uname).first()
+
+                if submitter_user:
+                    report["info"]["custom"]["submitter_name"] = (
+                        submitter_user.get_full_name() or submitter_user.username
+                    )
+                    report["info"]["custom"]["submitter"] = submitter_user.username
+                    report["info"]["custom"]["email"] = submitter_user.email
+
+                    if hasattr(submitter_user, "userprofile"):
+                        profile = submitter_user.userprofile
+                        if profile.avatar:
+                            report["info"]["custom"]["submitter_avatar"] = profile.avatar.url
+                        report["info"]["custom"]["organization"] = getattr(profile, "organization", "")
+                        report["info"]["custom"]["unit"] = getattr(profile, "unit", "")
+
+                    # Status
+                    status_parts = []
+                
+                    if submitter_user.is_active:
+                        status_parts.append("Active")
+                    else:
+                        status_parts.append("Inactive")
+                    
+                    if submitter_user.is_superuser:
+                        status_parts.append("Superuser")
+                    elif submitter_user.is_staff:
+                        status_parts.append("Staff")
+                    
+                    report["info"]["custom"]["status"] = " | ".join(status_parts)
+                else:
+                    report["info"]["custom"]["submitter_name"] = submitter_uname
+                    report["info"]["custom"]["status"] = "External Analyst"
+            except Exception:
+                pass
+                
+    if "info" in report and "comments" in report["info"]:
+        for comment in report["info"]["comments"]:
+
+            uname = comment.get("author_username", "").strip()
+
+            if not uname or uname in ("Anonymous", "legacy_user", ""):
+                comment["author_username"]     = ""
+                comment["author_full_name"]    = "Analyst"
+                comment["author_avatar"]       = ""
+                comment["author_email"]        = ""
+                comment["author_organization"] = ""
+                comment["author_unit"]         = ""
+                comment["author_status"]       = ""
+            else:
+                try:
+                    author_user = User.objects.filter(username=uname).first()
+                    if author_user:
+                        comment["author_full_name"] = (
+                            author_user.get_full_name() or author_user.username
+                        )
+                        comment["author_email"] = author_user.email
+                        if hasattr(author_user, "userprofile"):
+                            comment["author_organization"] = getattr(
+                                author_user.userprofile, "organization", ""
+                            )
+                            comment["author_unit"] = getattr(
+                                author_user.userprofile, "unit", ""
+                            )
+                            if author_user.userprofile.avatar:
+                                comment["author_avatar"] = (
+                                    author_user.userprofile.avatar.url
+                                )
+                        # Status comment
+                        if author_user.is_superuser:
+                            comment["author_status"] = "Admin"
+                        elif author_user.is_staff:
+                            comment["author_status"] = "staff"
+                        elif author_user.is_active:
+                            comment["author_status"] = "active"
+                        else:
+                            comment["author_status"] = "Inactive"
+                    else:
+                        comment["author_full_name"] = uname
+                        comment["author_avatar"]    = ""
+                        comment["author_status"]    = ""
+
+                except Exception:
+                    pass
+
+            for reply in comment.get("replies", []):
+                runame = reply.get("author_username", "").strip()
+
+                if not runame or runame in ("Anonymous", "legacy_user", ""):
+                    reply["author_username"]     = "Anonymous"
+                    reply["author_full_name"]    = "Anonymous"
+                    reply["author_avatar"]       = ""
+                    reply["author_email"]        = ""
+                    reply["author_organization"] = ""
+                    reply["author_unit"]         = ""
+                    reply["author_status"]       = ""
+                else:
+                    try:
+                        author_user = User.objects.filter(username=runame).first()
+                        if author_user:
+                            reply["author_full_name"] = (
+                                author_user.get_full_name() or author_user.username
+                            )
+                            reply["author_email"] = author_user.email
+                            if hasattr(author_user, "userprofile"):
+                                reply["author_organization"] = getattr(
+                                    author_user.userprofile, "organization", ""
+                                )
+                                reply["author_unit"] = getattr(
+                                    author_user.userprofile, "unit", ""
+                                )
+                                if author_user.userprofile.avatar:
+                                    reply["author_avatar"] = (
+                                        author_user.userprofile.avatar.url
+                                    )
+                            # Status reply
+                            if author_user.is_superuser:
+                                reply["author_status"] = "admin"
+                            elif author_user.is_staff:
+                                reply["author_status"] = "staff"
+                            elif author_user.is_active:
+                                reply["author_status"] = "active"
+                            else:
+                                reply["author_status"] = "Inactive"
+                        else:
+                            reply["author_full_name"] = runame
+                            reply["author_avatar"]    = ""
+                            reply["author_status"]    = ""
+
+                    except Exception:
+                        pass
+
+        
+    user_profile = None
+    if hasattr(request.user, "userprofile"):
+        user_profile = request.user.userprofile
+    _notif_task_id = report.get("info", {}).get("id")
+    if _notif_task_id:
+        try:
+            from notifications.signals import create_task_notification
+
+            _cape_task = db.view_task(int(_notif_task_id))
+            _cape_status = _cape_task.status if _cape_task else ""
+
+            if _cape_status in (
+                "reported", "failed_analysis",
+                "failed_processing", "failed_reporting"
+            ):
+                _uid = report.get("info", {}).get("user_id")
+
+                _uname = str(
+                    report.get("info", {}).get("owner", "") or ""
+                ).strip() or None
+
+                if not _uid and not _uname and _cape_task:
+                    _uid = getattr(_cape_task, "user_id", None)
+                    _uname = str(
+                        getattr(_cape_task, "owner", "") or ""
+                    ).strip() or None
+
+                create_task_notification(
+                    task_id=_notif_task_id,
+                    status=_cape_status,
+                    owner_username=_uname,
+                    owner_user_id=_uid,
+                )
+        except Exception as _ne:
+            print(f"[NOTIF views.report] error task #{_notif_task_id}: {_ne}")
 
     return render(
         request,
@@ -1695,25 +2902,32 @@ def report(request, task_id):
         {
             "title": "Analysis Report",
             "analysis": report,
-            # ToDo test
             "file": report.get("target", {}).get("file", {}),
             "id": report["info"]["id"],
             "tab_name": "static",
             "source_url": report["info"].get("source_url", ""),
-            # till here
             "domainlookups": domainlookups,
             "iplookups": iplookups,
             "settings": settings,
             "config": enabledconf,
             "reports_exist": reports_exist,
             "stats_total": stats_total,
+            "profile_obj": user_profile,
             "graphs": {
                 "vba2graph": {"enabled": vba2graph, "content": vba2graph_dict_content},
                 "bingraph": {"enabled": bingraph, "content": bingraph_dict_content},
             },
             "on_demand": on_demand_conf,
             "existent_tasks": existent_tasks,
-        },
+            "radar_labels": radar_labels,
+            "radar_data": radar_data,
+            "primary_classification": primary_classification,
+            "ml_confidence": ml_confidence,
+            "ml_available": ML_AVAILABLE,
+            "all_proba": all_proba,
+            "guac_recording_exists": guac_recording_exists,
+            "guac_recording_name": guac_recording_name or "",
+        }
     )
 
 
@@ -1835,6 +3049,27 @@ def file(request, category, task_id, dlfile):
         "memdump": ".dmp",
         "memdumpstrings": ".dmp.strings",
     }
+
+    # Get custom zip password from task options if available
+    zip_password = settings.ZIP_PWD
+    try:
+        db = Database()
+        task = db.view_task(int(task_id))
+        if task and task.options:
+            # Parse options to find zip_password parameter
+            options_dict = {}
+            for opt in task.options.split(","):
+                if "=" in opt:
+                    key, value = opt.split("=", 1)
+                    options_dict[key.strip()] = value.strip()
+            if "zip_password" in options_dict:
+                custom_pwd = options_dict.get("zip_password", "").strip()
+                if custom_pwd:
+                    # Replace underscores back to original characters for password
+                    zip_password = custom_pwd.encode() if isinstance(custom_pwd, str) else custom_pwd
+    except Exception:
+        # If any error, use default password
+        pass
 
     if category in zip_categories and not HAVE_PYZIPPER:
         return render(request, "error.html", {"error": "Missed pyzipper library: poetry install"})
@@ -1971,7 +3206,7 @@ def file(request, category, task_id, dlfile):
                 path = [path]
             if USE_SEVENZIP:
                 zip_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", f"{task_id}", f"{file_name}.zip")
-                sevenZipArgs = [SEVENZIP_PATH, f"-p{settings.ZIP_PWD.decode()}", "a", zip_path]
+                sevenZipArgs = [SEVENZIP_PATH, f"-p{zip_password.decode()}", "a", zip_path]
                 sevenZipArgs.extend(path)
                 try:
                     subprocess.check_call(sevenZipArgs)
@@ -1985,7 +3220,7 @@ def file(request, category, task_id, dlfile):
             else:
                 mem_zip = BytesIO()
                 with pyzipper.AESZipFile(mem_zip, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:
-                    zf.setpassword(settings.ZIP_PWD)
+                    zf.setpassword(zip_password)
                     if not isinstance(path, list):
                         path = [path]
                     for file in path:
@@ -2014,6 +3249,27 @@ def procdump(request, task_id, process_id, start, end, zipped=False):
     tmpdir = None
     tmp_file_path = None
     response = False
+    
+    # Get custom zip password from task options if available
+    zip_password = settings.ZIP_PWD
+    try:
+        db = Database()
+        task = db.view_task(int(task_id))
+        if task and task.options:
+            # Parse options to find zip_password parameter
+            options_dict = {}
+            for opt in task.options.split(","):
+                if "=" in opt:
+                    key, value = opt.split("=", 1)
+                    options_dict[key.strip()] = value.strip()
+            if "zip_password" in options_dict:
+                custom_pwd = options_dict.get("zip_password", "").strip()
+                if custom_pwd:
+                    zip_password = custom_pwd.encode() if isinstance(custom_pwd, str) else custom_pwd
+    except Exception:
+        # If any error, use default password
+        pass
+    
     if enabledconf["mongodb"]:
         analysis = mongo_find_one("analysis", {"info.id": int(task_id)}, {"procmemory": 1, "_id": 0}, sort=[("_id", -1)])
     if es_as_db:
@@ -2053,7 +3309,7 @@ def procdump(request, task_id, process_id, start, end, zipped=False):
                 if zipped and HAVE_PYZIPPER:
                     mem_zip = BytesIO()
                     with pyzipper.AESZipFile(mem_zip, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:
-                        zf.setpassword(settings.ZIP_PWD)
+                        zf.setpassword(zip_password)
                         zf.writestr(file_name, s.getvalue())
                     file_name += ".zip"
                     content_type = "application/zip"
@@ -2212,6 +3468,8 @@ def search(request, searched=""):
             elif len(tmp_value) == 128 and re.match(r"^([a-fA-F\d]{128})$", tmp_value):
                 term = "sha512"
 
+        is_multi_search = not term
+
         if term == "ids":
             if all([v.strip().isdigit() for v in value.split(",")]):
                 value = [int(v.strip()) for v in filter(None, value.split(","))]
@@ -2222,16 +3480,25 @@ def search(request, searched=""):
                     {"title": "Search", "analyses": None, "term": searched, "error": "Not all values are integers"},
                 )
 
-        # Escape forward slash characters
         if isinstance(value, str):
             value = value.replace("\\", "\\\\")
 
         term_only, value_only = term, value
 
         try:
-            records = perform_search(term, value, user_id=request.user.id, privs=request.user.is_staff)
+            if is_multi_search:
+                try:
+                    records = perform_search("", value, user_id=request.user.id, privs=request.user.is_staff)
+                    term = ""
+                except Exception as e:
+                    print(f"[multi_search] error: {e}")
+                    records = []
+            else:
+                records = perform_search(term, value, user_id=request.user.id, privs=request.user.is_staff)
+
         except ValueError:
-            if term:
+            print(f"[search] ValueError: {e}, term={term}, is_multi={is_multi_search}")
+            if term and not is_multi_search:
                 return render(
                     request,
                     "analysis/search.html",
@@ -2245,14 +3512,26 @@ def search(request, searched=""):
                 )
 
         analyses = []
+        print(f"[DEBUG] records count: {len(records) if records else 0}")
+        print(f"[DEBUG] term: '{term}', is_multi: {is_multi_search}")
+        if records:
+            print(f"[DEBUG] first record type: {type(records[0])}")
+            print(f"[DEBUG] first record keys: {list(records[0].keys()) if isinstance(records[0], dict) else 'not dict'}")
+            print(f"[DEBUG] first record task_id: {records[0].get('task_id') if isinstance(records[0], dict) else 'N/A'}")
         for result in records or []:
             new = None
-            if enabledconf["mongodb"] and enabledconf["elasticsearchdb"] and essearch and not term:
-                new = get_analysis_info(db, id=int(result["_source"]["task_id"]))
-            if enabledconf["mongodb"] and term and "info" in result:
-                new = get_analysis_info(db, id=int(result["info"]["id"]))
-            if es_as_db:
-                new = get_analysis_info(db, id=int(result["info"]["id"]))
+            try:
+                if enabledconf["mongodb"] and enabledconf["elasticsearchdb"] and essearch and not term:
+                    _tid = result.get("task_id") or result.get("info", {}).get("id")
+                    if _tid:
+                        new = get_analysis_info(db, id=int(_tid))
+                elif enabledconf["mongodb"] and "info" in result:
+                    new = get_analysis_info(db, id=int(result["info"]["id"]))
+                elif es_as_db and "info" in result:
+                    new = get_analysis_info(db, id=int(result["info"]["id"]))
+            except Exception as e:
+                print(f"[search] result processing error: {e}")
+                continue
             if not new:
                 continue
             analyses.append(new)
@@ -2382,47 +3661,331 @@ def pcapstream(request, task_id, conntuple):
 
     return HttpResponse(json.dumps(packets), content_type="application/json")
 
+def _make_safe(text):
+    import html as _html
+    out = _html.escape(text)
+    for tag in ('b', 'i', 'u', 'strong', 'em', 'code'):
+        out = out.replace(f'&lt;{tag}&gt;', f'<{tag}>')
+        out = out.replace(f'&lt;/{tag}&gt;', f'</{tag}>')
+    out = out.replace('\n', '<br />')
+    return out
+
+def get_magic_mime_type(data):
+    """Magic Bytes"""
+    if data.startswith(b'\xff\xd8\xff'): return 'image/jpeg'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'): return 'image/png'
+    if data.startswith(b'GIF87a') or data.startswith(b'GIF89a'): return 'image/gif'
+    if data.startswith(b'RIFF') and data[8:12] == b'WEBP': return 'image/webp'
+    return None
 
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def comments(request, task_id):
     if request.method == "POST" and settings.COMMENTS:
-        comment = request.POST.get("commentbox", "")
-        if not comment:
-            return render(request, "error.html", {"error": "No comment provided."})
-
+        # Get the full report to access owner/user_id information
+        full_report = None
+        esid = None
+        esidx = None
+        
         if enabledconf["mongodb"]:
-            report = mongo_find_one("analysis", {"info.id": int(task_id)}, {"info.comments": 1, "_id": 0}, sort=[("_id", -1)])
-        if es_as_db:
+            report = mongo_find_one("analysis", {"info.id": int(task_id)}, {"info": 1, "_id": 0}, sort=[("_id", -1)])
+            full_report = report
+            # Get only the comments for manipulation
+            comments_query = mongo_find_one("analysis", {"info.id": int(task_id)}, {"info.comments": 1, "_id": 0}, sort=[("_id", -1)])
+            report = comments_query
+        elif es_as_db:
             query = es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id))["hits"]["hits"][0]
             report = query["_source"]
+            full_report = report
             esid = query["_id"]
             esidx = query["_index"]
-        if "comments" in report["info"]:
-            curcomments = report["info"]["comments"]
-        else:
+        
+        curcomments = report.get("info", {}).get("comments", []) if report else []
+        if not curcomments:
             curcomments = []
-        buf = {}
-        buf["Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        escape_map = {
-            "&": "&amp;",
-            '"': "&quot;",
-            "'": "&apos;",
-            "<": "&lt;",
-            ">": "&gt;",
-            "\n": "<br />",
+
+        action = request.POST.get("action")
+        if action in ("delete_comment", "delete_reply"):
+            try:
+                c_idx = int(request.POST.get("c_idx", -1))
+                media_root = getattr(settings, 'MEDIA_ROOT', '/opt/CAPEv2/web/media')
+                media_url = getattr(settings, 'MEDIA_URL', '/media/')
+
+                if 0 <= c_idx < len(curcomments):
+                    if action == "delete_reply":
+                        r_idx = int(request.POST.get("r_idx", -1))
+                        replies = curcomments[c_idx].get("replies", [])
+                        if 0 <= r_idx < len(replies):
+                            if replies[r_idx].get("author_username") == request.user.username or request.user.is_superuser:
+                                delete_images_from_html(replies[r_idx].get("Data", ""), media_root, media_url)
+                                del curcomments[c_idx]["replies"][r_idx]
+
+                    elif action == "delete_comment":
+                        if curcomments[c_idx].get("author_username") == request.user.username or request.user.is_superuser:
+                            delete_images_from_html(curcomments[c_idx].get("Data", ""), media_root, media_url)
+                            
+                            for reply in curcomments[c_idx].get("replies", []):
+                                delete_images_from_html(reply.get("Data", ""), media_root, media_url)
+
+                            del curcomments[c_idx]
+
+                if enabledconf["mongodb"]:
+                    mongo_update_one("analysis", {"info.id": int(task_id)}, {"$set": {"info.comments": curcomments}})
+                if es_as_db:
+                    es.update(index=esidx, id=esid, body={"doc": {"info": {"comments": curcomments}}})
+                return redirect("report", task_id=task_id)
+            except ValueError:
+                pass 
+       
+        comment_text = request.POST.get("commentbox", "").strip()
+        reply_to = request.POST.get("reply_to")
+
+        if not comment_text and not request.FILES.getlist('comment_images'):
+            return render(request, "error.html", {"error": "No comment provided."})
+
+        safe_data = _html.escape(comment_text) if comment_text else ""
+        for _tag in ('b', 'i', 'u', 'strong', 'em', 'code', 'br'):
+            safe_data = safe_data.replace(f'&lt;{_tag}&gt;', f'<{_tag}>')
+            safe_data = safe_data.replace(f'&lt;/{_tag}&gt;', f'</{_tag}>')
+        safe_data = safe_data.replace('\n', '<br />')
+
+        image_files = request.FILES.getlist('comment_images')
+        if image_files:
+            media_root = getattr(settings, 'MEDIA_ROOT', '/opt/CAPEv2/web/media')
+            media_url = getattr(settings, 'MEDIA_URL', '/media/')
+            img_dir = os.path.join(media_root, 'comment_images', str(task_id))
+            os.makedirs(img_dir, exist_ok=True)
+
+            supported_formats = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+            TARGET_MAX_SIZE = 750 * 1024 
+            MAX_DIMENSIONS = (1600, 1600)
+
+            for img_file in image_files:
+                img_data = img_file.read()
+                if not img_data:
+                    continue
+
+                if img_data[:4] == b'PK\x03\x04':
+                    try:
+                        with zipfile.ZipFile(BytesIO(img_data)) as zf:
+                            for zipinfo in zf.infolist():
+                                if not zipinfo.is_dir() and zipinfo.filename.lower().endswith(('jpg','jpeg','png','gif','webp')):
+                                    img_data = zf.read(zipinfo)
+                                    break
+                    except zipfile.BadZipFile:
+                        continue
+
+                magic_mime = get_magic_mime_type(img_data)
+                if not magic_mime:
+                    continue
+
+                try:
+                    img = Image.open(BytesIO(img_data))
+                    img.verify() 
+                    img = Image.open(BytesIO(img_data)) 
+                except (UnidentifiedImageError, OSError):
+                    continue
+
+                try:
+                    from PIL import ImageOps
+                    img = ImageOps.exif_transpose(img)
+                except Exception:
+                    pass
+
+                fmt = img.format.lower() if img.format else magic_mime.split('/')[1]
+                if fmt not in supported_formats:
+                    fmt = "png"
+
+                if img.width > MAX_DIMENSIONS[0] or img.height > MAX_DIMENSIONS[1]:
+                    img.thumbnail(MAX_DIMENSIONS, Image.Resampling.LANCZOS)
+
+                output = BytesIO()
+                
+                if len(img_data) > TARGET_MAX_SIZE and fmt == "png":
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGBA")
+                        fmt = "webp"
+                    else:
+                        img = img.convert("RGB")
+                        fmt = "jpeg"
+
+                quality = 90
+                while True:
+                    output.seek(0)
+                    output.truncate(0)
+                    
+                    if fmt in ("jpg", "jpeg"):
+                        img.convert("RGB").save(output, format='JPEG', quality=quality, optimize=True)
+                    elif fmt == "webp":
+                        img.save(output, format='WEBP', quality=quality, method=4)
+                    else:
+                        img.save(output, format=fmt.upper(), optimize=True)
+
+                    img_data = output.getvalue()
+                    
+                    if len(img_data) <= TARGET_MAX_SIZE or fmt not in ("jpg", "jpeg", "webp") or quality <= 20:
+                        break
+                    quality -= 15 
+                
+                if len(img_data) > (TARGET_MAX_SIZE + 100000): 
+                    continue 
+
+                ext = supported_formats.get(fmt, "png")
+                fname = f"{uuid.uuid4().hex}.{ext}"
+                filepath = os.path.join(img_dir, fname)
+                with open(filepath, 'wb') as f:
+                    f.write(img_data)
+
+                img_url = f"{media_url}comment_images/{task_id}/{fname}"
+                safe_data += (
+                    f'<br><img src="{img_url}" '
+                    f'style="max-width:100%;max-height:400px;border-radius:4px;'
+                    f'margin-top:6px;cursor:pointer;" loading="lazy" '
+                    f'onclick="openImageModal(this.src)">'
+                )
+
+        avatar_url = ""
+        user_organization = ""
+        user_unit = ""
+        if hasattr(request.user, 'userprofile'):
+            if request.user.userprofile.avatar:
+                avatar_url = request.user.userprofile.avatar.url
+            user_organization = getattr(request.user.userprofile, 'organization', '')
+            user_unit = getattr(request.user.userprofile, 'unit', '')
+
+        new_comment = {
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Data": safe_data,
+            "Status": "posted",
+            "author_username": request.user.username,
+            "author_full_name": request.user.get_full_name() or request.user.username,
+            "author_email": request.user.email,
+            "author_avatar": avatar_url,
+            "author_organization": user_organization,
+            "author_unit": user_unit,
+            "replies": []
         }
-        buf["Data"] = "".join(escape_map.get(thechar, thechar) for thechar in comment)
-        # status can be posted/removed
-        buf["Status"] = "posted"
-        curcomments.insert(0, buf)
+
+        if reply_to:
+            try:
+                parent_idx = int(reply_to) - 1
+                if "replies" not in curcomments[parent_idx]:
+                    curcomments[parent_idx]["replies"] = []
+                curcomments[parent_idx]["replies"].append(new_comment)
+            except (ValueError, IndexError):
+                return render(request, "error.html", {"error": "Invalid reply target."})
+        else:
+            curcomments.insert(0, new_comment)
+
         if enabledconf["mongodb"]:
             mongo_update_one("analysis", {"info.id": int(task_id)}, {"$set": {"info.comments": curcomments}})
         if es_as_db:
             es.update(index=esidx, id=esid, body={"doc": {"info": {"comments": curcomments}}})
+
+        # Create notifications
+        try:
+            # Try to get owner from different sources
+            owner_username = None
+            
+            # First, try from full report (info.owner or info.user_id)
+            if enabledconf["mongodb"] and full_report:
+                print(f"DEBUG: full_report keys: {full_report.get('info', {}).keys() if full_report else 'None'}")
+                owner_from_owner_field = str(full_report["info"].get("owner", "") or "").strip()
+                owner_from_userid_field = str(full_report["info"].get("user_id", "") or "").strip()
+                print(f"DEBUG: owner from 'owner' field: '{owner_from_owner_field}'")
+                print(f"DEBUG: owner from 'user_id' field: '{owner_from_userid_field}'")
+                owner_username = owner_from_owner_field or owner_from_userid_field
+            elif es_as_db:
+                print(f"DEBUG: ES report keys: {report.get('info', {}).keys() if report else 'None'}")
+                owner_from_owner_field = str(report["info"].get("owner", "") or "").strip()
+                owner_from_userid_field = str(report["info"].get("user_id", "") or "").strip()
+                print(f"DEBUG: owner from 'owner' field: '{owner_from_owner_field}'")
+                print(f"DEBUG: owner from 'user_id' field: '{owner_from_userid_field}'")
+                owner_username = owner_from_owner_field or owner_from_userid_field
+            
+            # If not found in report, try from database task
+            if not owner_username:
+                try:
+                    db = Database()
+                    task = db.view_task(int(task_id))
+                    if task:
+                        owner_username = task.owner if hasattr(task, 'owner') else None
+                        print(f"DEBUG: Got owner from DB task.owner: {owner_username}")
+                except Exception as e:
+                    print(f"DEBUG: Error getting task from DB: {e}")
+            
+            link = f"/analysis/{task_id}/"
+            print(f"DEBUG: Final owner_username: '{owner_username}'")
+
+            if reply_to:
+                # Reply notification
+                try:
+                    parent_idx = int(reply_to) - 1
+                    if 0 <= parent_idx < len(curcomments):
+                        parent_author_raw = curcomments[parent_idx].get("author_username", "")
+                        parent_author = str(parent_author_raw).strip() if parent_author_raw else ""
+                        print(f"DEBUG: Reply to comment {parent_idx} by {parent_author}, current user {request.user.username}")
+                        if parent_author and parent_author != request.user.username:
+                            parent_user = User.objects.filter(username__iexact=parent_author).first()
+                            print(f"DEBUG: Found parent_user {parent_user}")
+                            if parent_user and parent_user != request.user:
+                                Notification.objects.create(
+                                    user=parent_user,
+                                    type='reply',
+                                    title='New Reply to Your Comment',
+                                    message=f'{request.user.username} replied to your comment on analysis #{task_id}',
+                                    link=f"{link}#comment-{parent_idx}"
+                                )
+                                print(f"DEBUG: Created reply notification for {parent_user.username}")
+                except (ValueError, IndexError) as e:
+                    print(f"DEBUG: Error in reply notification: {e}")
+            else:
+                # New comment notification
+                print(f"DEBUG: New comment, owner '{owner_username}', current user '{request.user.username}'")
+                if owner_username and owner_username.lower() != request.user.username.lower():
+                    if str(owner_username).isdigit():
+                        owner_user = User.objects.filter(id=int(owner_username)).first()
+                    else:
+                        owner_user = User.objects.filter(username__iexact=owner_username).first()
+                    print(f"DEBUG: Found owner_user {owner_user}")
+                    if owner_user and owner_user != request.user:
+                        Notification.objects.create(
+                            user=owner_user,
+                            type='comment',
+                            title='New Comment on Your Analysis',
+                            message=f'{request.user.username} commented on your analysis #{task_id}',
+                            link=f"{link}#comment-0"
+                        )
+                        print(f"DEBUG: Created comment notification for {owner_user.username}")
+                    else:
+                        print(f"DEBUG: Owner user not found with username {owner_username}")
+                else:
+                    print(f"DEBUG: Skipping notification - either no owner or same user commenting")
+        except Exception as e:
+            print(f"DEBUG: Error creating notifications: {e}")
+
         return redirect("report", task_id=task_id)
 
     return render(request, "error.html", {"error": "Invalid Method"})
 
+def delete_images_from_html(html_data, media_root, media_url):
+    if not html_data:
+        return
+        
+    pattern = r'<img[^>]+src=["\'](.*?)["\']'
+    img_urls = re.findall(pattern, html_data)
+
+    for url in img_urls:
+        if url.startswith(media_url):
+            relative_path = url[len(media_url):]
+            file_path = os.path.join(media_root, relative_path)
+            
+            file_path = os.path.normpath(file_path)
+            
+            if file_path.startswith(os.path.normpath(media_root)) and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError as e:
+                    print(f"Error deleting image: {e}") 
 
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def vtupload(request, category, task_id, filename, dlfile):
@@ -2463,21 +4026,98 @@ def vtupload(request, category, task_id, filename, dlfile):
 
 
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
-def statistics_data(request, days=7):
-    if days.isdigit():
-        try:
-            details = statistics(int(days))
-        except Exception as e:
-            # psycopg2.OperationalError
-            print(e)
-            return render(
-                request,
-                "error.html",
-                {"title": "Statistics", "error": "Please restart your database. Probably it had an update or it just down"},
-            )
-        return render(request, "statistics.html", {"title": "Statistics", "statistics": details, "days": days})
-    return render(request, "error.html", {"title": "Statistics", "error": "Provide days as number"})
+def statistics_data(request, days=None):
+    all_time = 36500 
+    db = Database() 
+    
+    try:
+        details = statistics(all_time) 
+    except Exception as e:
+        print(f"Error pulling base statistics: {e}")
+        details = {}
 
+    if not isinstance(details, dict):
+        details = {}
+
+    details["states_count"] = {
+        "pending": db.count_tasks(status=TASK_PENDING),
+        "running": db.count_tasks(status=TASK_RUNNING),
+        "completed": db.count_tasks(status=TASK_COMPLETED),
+        "reported": db.count_tasks(status=TASK_REPORTED),
+        "distributed": db.count_tasks(status=TASK_DISTRIBUTED),
+        "recovered": db.count_tasks(status=TASK_RECOVERED),
+        "failed_analysis": db.count_tasks(status=TASK_FAILED_ANALYSIS),
+        "failed_processing": db.count_tasks(status=TASK_FAILED_PROCESSING),
+        "failed_reporting": db.count_tasks(status=TASK_FAILED_REPORTING),
+    }
+
+    try:
+        details.update(_build_task_statistics(db, days=7))
+    except Exception as e:
+        print(f"Error building task stats: {e}")
+
+    if not details.get("distributed_tasks"):
+        try:
+            server_name = f"{socket.gethostname()} (Jakarta, ID)"
+        except Exception:
+            server_name = "AMAL-Main-Node (Jakarta, ID)"
+
+        local_cluster = {}
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        if "tasks" in details:
+            for day, info in details["tasks"].items():
+                tasks_total = info.get("added", 0) + info.get("reported", 0) + info.get("failed", 0)
+                if tasks_total > 0 or day == today_str:
+                    local_cluster[day] = {server_name: tasks_total}
+
+        # Kalau kosong, paksakan selalu ada isi minimal hari ini = 0
+        if not local_cluster:
+            local_cluster = {today_str: {server_name: 0}}
+
+        details["distributed_tasks"] = local_cluster
+
+        details["total"] = db.count_tasks()
+        
+    if HAVE_MONGO:
+        try:
+            rows = list(mongo_aggregate("analysis", [
+                {"$project": {"statistics.signatures": 1}},
+                {"$unwind": "$statistics.signatures"},
+                {"$group": {
+                    "_id": "$statistics.signatures.name",
+                    "total": {"$sum": "$statistics.signatures.time"},
+                    "runs": {"$sum": 1}
+                }},
+                {"$sort": {"runs": -1}}
+            ]))
+            
+            all_signatures = {}
+            for r in rows:
+                name = r.get("_id")
+                if not name: continue
+                
+                runs = r.get("runs", 0)
+                total_time = r.get("total", 0)
+                avg_time = round(total_time / max(runs, 1), 4)
+                
+                all_signatures[name] = {
+                    "runs": runs,
+                    "total": f"{round(total_time, 4)}s",
+                    "average": f"{avg_time}s",
+                    "successful": runs
+                }
+            
+            details["custom_statistics"] = all_signatures
+            
+        except Exception as e:
+            print(f"Gagal narik full signatures dari Mongo: {e}")
+
+    return render(request, "statistics.html", {
+        "title": "Statistics",
+        "statistics": details,
+        "days": "All Time"
+    })
 
 on_demand_config_mapper = {
     "bingraph": reporting_cfg,
@@ -2672,3 +4312,111 @@ def failed_processing(request, task_id):
         "process_log": log_content,
         "settings": settings,
     })
+
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def misp_redirect(request, event_id):
+    import re as re_misp, urllib3, traceback
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.ssl_ import create_urllib3_context
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    LOG = "/tmp/misp_debug.log"
+    def log(msg):
+        with open(LOG, "a") as f:
+            f.write(msg + "\n")
+
+    MISP_INTERNAL_URL = os.environ.get("MISP_INTERNAL_URL", "https://127.0.0.1:8443")
+    MISP_PUBLIC_URL   = os.environ.get("MISP_PUBLIC_URL",   "https://192.168.88.244/misp")
+    MISP_USER         = os.environ.get("MISP_USER",         "")
+    MISP_PASS         = os.environ.get("MISP_PASS",         "")
+
+    log(f"=== misp_redirect event_id={event_id} ===")
+    log(f"INTERNAL={MISP_INTERNAL_URL} USER={MISP_USER} PASS={'*' if MISP_PASS else 'EMPTY'}")
+
+    if not all([MISP_INTERNAL_URL, MISP_PUBLIC_URL, MISP_USER, MISP_PASS]):
+        log("ERROR: credentials kosong!")
+        return HttpResponseRedirect(f"{MISP_PUBLIC_URL}/events/view/{event_id}")
+
+    class LegacySSLAdapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            ctx = create_urllib3_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = 0
+            ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+            kwargs["ssl_context"] = ctx
+            super().init_poolmanager(*args, **kwargs)
+        def send(self, request, **kwargs):
+            kwargs["verify"] = False
+            return super().send(request, **kwargs)
+
+    try:
+        s = req.Session()
+        s.mount("https://", LegacySSLAdapter())
+        s.mount("http://",  LegacySSLAdapter())
+
+        HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+
+        login_page = s.get(
+            f"{MISP_INTERNAL_URL}/users/login",
+            headers=HEADERS,
+            allow_redirects=True, 
+            verify=False, 
+            timeout=10
+        )
+        log(f"GET login page: status={login_page.status_code} url={login_page.url}")
+
+        token_key_match      = re_misp.search(r'name="data\[_Token\]\[key\]"\s+value="([^"]+)"',     login_page.text)
+        token_fields_match   = re_misp.search(r'name="data\[_Token\]\[fields\]"\s+value="([^"]+)"',  login_page.text)
+        token_unlocked_match = re_misp.search(r'name="data\[_Token\]\[unlocked\]"\s+value="([^"]*)"', login_page.text)
+
+        token_key      = token_key_match.group(1)      if token_key_match      else ""
+        token_fields   = token_fields_match.group(1)   if token_fields_match   else ""
+        token_unlocked = token_unlocked_match.group(1) if token_unlocked_match else ""
+
+        log(f"token_key={'FOUND: '+token_key[:20] if token_key else 'NOT FOUND'}")
+
+        if not token_key:
+            log(f"HTML snippet: {login_page.text[:500]}")
+            return HttpResponseRedirect(f"{MISP_PUBLIC_URL}/events/view/{event_id}")
+
+        login_response = s.post(
+            f"{MISP_INTERNAL_URL}/users/login",
+            headers=HEADERS,
+            data={
+                "_method"                : "POST",
+                "data[User][email]"      : MISP_USER,
+                "data[User][password]"   : MISP_PASS,
+                "data[_Token][key]"      : token_key,
+                "data[_Token][fields]"   : token_fields,
+                "data[_Token][unlocked]" : token_unlocked,
+            },
+            allow_redirects=False,
+            verify=False,
+            timeout=10
+        )
+
+        log(f"POST login: status={login_response.status_code}")
+        log(f"Location: {login_response.headers.get('Location', 'NONE')}")
+        log(f"Session cookies: {dict(s.cookies)}")
+
+        redirect_location = login_response.headers.get("Location", "")
+        if login_response.status_code not in (301, 302) or "/users/login" in redirect_location:
+            log("LOGIN FAILED!")
+            log(f"Response body: {login_response.text[:300]}")
+            return HttpResponseRedirect(f"{MISP_PUBLIC_URL}/events/view/{event_id}")
+
+        log("LOGIN SUCCESS!")
+        target_url = f"{MISP_PUBLIC_URL}/events/view/{event_id}"
+        response   = HttpResponseRedirect(target_url)
+        for cookie in s.cookies:
+            log(f"  set_cookie: {cookie.name}={cookie.value[:20]}... path=/")
+            response.set_cookie(
+                key=cookie.name, value=cookie.value,
+                path="/misp/", httponly=True, samesite="Lax", secure=True)
+        return response
+
+    except Exception as e:
+        with open(LOG, "a") as f:
+            traceback.print_exc(file=f)
+        return HttpResponseRedirect(f"{MISP_PUBLIC_URL}/events/view/{event_id}")

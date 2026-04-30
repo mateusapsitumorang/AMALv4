@@ -5,7 +5,7 @@
 
 <div class="card bg-dark border-secondary">
     <div class="card-header border-secondary d-flex align-items-center justify-content-between">
-        <h5 class="mb-0 text-white"><i class="fas fa-share-alt me-2 text-success"></i> Network Connection Graph</h5>
+        <h5 class="mb-0 text-white"><i class="fas fa-share-alt me-2 text-info"></i> Network Connection Graph</h5>
         <div class="d-flex gap-2 align-items-center">
             <span class="badge" style="background:#1a5c1a;border:1px solid #2ecc71;font-size:0.7rem;">Victim</span>
             <span class="badge" style="background:#5c1a1a;border:1px solid #e74c3c;font-size:0.7rem;">Remote Host</span>
@@ -90,21 +90,45 @@
             size: 22
         });
 
+        /* --- Flag image cache (image-based, no emoji) --- */
+        var flagImages = {};
+        function loadFlag(cc) {
+            if (!cc || flagImages[cc]) return;
+            var img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function () { if (window._netGraphNetwork) window._netGraphNetwork.redraw(); };
+            img.onerror = function () { delete flagImages[cc]; };
+            img.src = 'https://flagcdn.com/24x18/' + cc.toLowerCase() + '.png';
+            flagImages[cc] = img;
+        }
+
         /* --- Helper: add host node --- */
         function addHost(ip) {
             if (seen[ip]) return;
             seen[ip] = true;
             var host = hosts.find(function (h) { return h.ip === ip; }) || {};
-            var label = ip;
-            if (host.country_name) label += '\n' + host.country_name;
-            if (host.asn_name)     label += '\n' + host.asn_name.slice(0, 20);
+            var cc = (host.country_code || '').toLowerCase().trim();
+            if (cc && /^[a-z]{2}$/.test(cc)) loadFlag(cc);
+
+            var countryLine = '';
+            var countryName = (host.country_name || '').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+            if (countryName && countryName.toLowerCase() !== 'unknown') {
+                /* leave space for the flag image that will be drawn on canvas */
+                countryLine = '\n' + (cc ? '      ' : '') + countryName;
+            }
+            var label = ip + countryLine;
+            if (host.asn_name) label += '\n' + host.asn_name.slice(0, 22);
             nodes.add({
                 id: 'ip:' + ip,
                 label: label,
                 shape: 'box',
+                cc: cc || null,
                 color: { background: '#5c1a1a', border: '#e74c3c', highlight: { background: '#c0392b', border: '#e74c3c' } },
                 font: { color: '#ffffff', size: 11 },
-                title: host.hostname ? 'Hostname: ' + host.hostname : ip
+                title: (cc ? '<img src="https://flagcdn.com/24x18/' + cc + '.png" style="vertical-align:middle;margin-right:4px;">' : '')
+                     + (host.hostname ? 'Hostname: ' + host.hostname + '<br>' : '')
+                     + (host.asn ? 'ASN: ' + host.asn + (host.asn_name ? ' ' + host.asn_name : '') + '<br>' : '')
+                     + ip
             });
         }
 
@@ -191,6 +215,24 @@
         };
         var network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
         window._netGraphNetwork = network;
+
+        /* --- Draw flag images on the canvas after each render frame --- */
+        network.on('afterDrawing', function (ctx) {
+            nodes.forEach(function (node) {
+                if (!node.cc) return;
+                var img = flagImages[node.cc];
+                if (!img || !img.complete || !img.naturalWidth) return;
+                try {
+                    var box = network.getBoundingBox(node.id);
+                    if (!box) return;
+                    /* position: inside the box, left-aligned on the country-name line */
+                    var canvasX = box.left + 6;
+                    /* vertically: middle of the box */
+                    var midY = (box.top + box.bottom) / 2;
+                    ctx.drawImage(img, canvasX, midY - 2, 24, 18);
+                } catch (e) { /* node may not be rendered yet */ }
+            });
+        });
     }
 }());
 </script>

@@ -17,32 +17,66 @@
  * under the License.
  */
 
- #player {
-    width: 640px;
+/* ─── Player Wrapper ─────────────────────────────────────────────────────── */
+
+#player {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
+
+/* ─── Display Area ───────────────────────────────────────────────────────── */
 
 #display {
     position: relative;
+    width: 100%;
+    flex: 1 1 auto;
+    overflow: hidden;
+    background: #000;
+
+    /* Center the Guacamole display div */
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
+
+/* ── Layer 1: Blur backdrop — absolute, fills entire #display behind video ── */
+#display .bg-blur-canvas {
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 120%;
+    height: 120%;
+    z-index: 1;
+    filter: blur(30px) brightness(0.32) saturate(1.2);
+    pointer-events: none;
+}
+
+/* ── Layer 2: Guacamole display wrapper div — centered, above blur ── */
+#display > div:not(.notification-container) {
+    position: relative;
+    z-index: 2;
+}
+
+/* ─── Notification overlay — always on top ───────────────────────────────── */
 
 #player .notification-container {
     position: absolute;
-    z-index: 1;
-    top: 0;
-    right: 0;
-    left: 0;
-    bottom: 0;
+    z-index: 10;
+    inset: 0;
+    pointer-events: none;
 }
 
+/* ─── Seek Notification ──────────────────────────────────────────────────── */
+
 #player .seek-notification {
-
-    color: white;
-    background: rgba(0, 0, 0, 0.75);
-
-    display: none; /* Initially hidden */
+    display: none;
     width: 100%;
     height: 100%;
-
+    color: #fff;
+    background: rgba(0, 0, 0, 0.75);
+    pointer-events: all;
 }
 
 #player.seeking .seek-notification {
@@ -54,61 +88,46 @@
     text-align: center;
     vertical-align: middle;
     font-family: sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.03em;
 }
+
+/* ─── Controls Bar ───────────────────────────────────────────────────────── */
 
 #player .controls {
-
     width: 100%;
+    flex-shrink: 0;
+    padding: 0.4em 0.6em;
+    background: #1a1a1a;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
 
-    /* IE10 */
-    display: -ms-flexbox;
-    -ms-flex-align: center;
-    -ms-flex-direction: row;
-
-    /* Ancient Mozilla */
-    display: -moz-box;
-    -moz-box-align: center;
-    -moz-box-orient: horizontal;
-
-    /* Ancient WebKit */
-    display: -webkit-box;
-    -webkit-box-align: center;
-    -webkit-box-orient: horizontal;
-
-    /* Old WebKit */
     display: -webkit-flex;
-    -webkit-align-items: center;
-    -webkit-flex-direction: row;
-
-    /* W3C */
     display: flex;
+    -webkit-align-items: center;
     align-items: center;
+    -webkit-flex-direction: row;
     flex-direction: row;
-
-}
-
-#player .controls > * {
-    margin: 0.25em;
-}
-
-#player .controls #position-slider {
-    -ms-flex: 1 1 auto;
-    -moz-box-flex: 1;
-    -webkit-box-flex: 1;
-    -webkit-flex: 1 1 auto;
-    flex: 1 1 auto;
+    gap: 0.4em;
 }
 
 #player .controls #play-pause {
-    margin-left: 0;
     min-width: 5em;
+    flex-shrink: 0;
+}
+
+#player .controls #position-slider {
+    -webkit-flex: 1 1 auto;
+    flex: 1 1 auto;
+    accent-color: #0d6efd;
+    cursor: pointer;
 }
 
 #player .controls #position,
 #player .controls #duration {
     font-family: monospace;
-}
-
-#player .controls #duration {
-    margin-right: 0;
+    font-size: 0.85rem;
+    color: #ccc;
+    white-space: nowrap;
+    flex-shrink: 0;
 }

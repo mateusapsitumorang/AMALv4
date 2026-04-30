@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+{% block title %}MobSF Report · {{ report.app_name|default:file_hash }} · CAPE Sandbox{% endblock %}
+{% block page_title %}MobSF Report{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <div>{{ error }}</div>
+</div>
+<a href="{% url 'mobsf' %}" class="btn btn-outline-primary">
+    <i class="fas fa-arrow-left me-2"></i>Back to MobSF
+</a>
+{% elif scanning %}
+<!-- Scan In Progress -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+        <div class="mb-4">
+            <div class="spinner-border text-primary" role="status" style="width: 4rem; height: 4rem;">
+                <span class="visually-hidden">Scanning...</span>
+            </div>
+        </div>
+        <h3 class="fw-bold mb-2">Analysis In Progress</h3>
+        <p class="text-muted mb-1">MobSF is analyzing your file. This typically takes 1–3 minutes.</p>
+        <p class="text-muted mb-4"><code>{{ file_hash }}</code></p>
+        <div class="progress mx-auto mb-4" style="max-width: 400px; height: 6px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 100%;"></div>
+        </div>
+        <small class="text-muted"><i class="fas fa-sync-alt me-1"></i> This page will auto-refresh every 10 seconds</small>
+    </div>
+</div>
+<script>setTimeout(function(){ location.reload(); }, 10000);</script>
+{% else %}
+
+<!-- App Overview -->
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-start">
+                    {% if report.icon_path %}
+                    <img src="{% url 'mobsf_icon' file_hash=file_hash %}" alt="icon"
+                         class="rounded me-4" style="width: 72px; height: 72px; object-fit: contain; background: var(--card-grey); padding: 8px;"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="bg-primary bg-opacity-10 p-3 rounded me-4 align-items-center justify-content-center" style="display:none; width:72px; height:72px;">
+                        <i class="fab fa-android text-primary fs-1"></i>
+                    </div>
+                    {% else %}
+                    <div class="bg-primary bg-opacity-10 p-3 rounded me-4 d-flex align-items-center justify-content-center" style="width:72px; height:72px;">
+                        <i class="fab fa-android text-primary fs-1"></i>
+                    </div>
+                    {% endif %}
+                    <div class="flex-grow-1">
+                        <h3 class="fw-bold mb-1">{{ report.app_name|default:"Unknown App" }}</h3>
+                        <p class="text-muted mb-2">
+                            <code>{{ report.package_name|default:file_hash }}</code>
+                            <span class="mx-2">|</span>
+                            v{{ report.version_name|default:"?" }}
+                            <span class="mx-2">|</span>
+                            SDK {{ report.min_sdk|default:"?" }} - {{ report.target_sdk|default:"?" }}
+                        </p>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <span class="badge bg-primary bg-opacity-10 text-secondary px-3 py-2">{{ report.size|default:"?" }}</span>
+                            <span class="badge bg-info bg-opacity-10 text-info px-3 py-2">MD5: {{ file_hash|truncatechars:12 }}</span>
+                            {% if report.app_type %}
+                            <span class="badge bg-success bg-opacity-10 text-success px-3 py-2">{{ report.app_type }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Score -->
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center p-4 d-flex flex-column justify-content-center">
+                <div class="position-relative d-inline-block mx-auto mb-3" style="width: 120px; height: 120px;">
+                    <svg viewBox="0 0 120 120" style="transform: rotate(-90deg);">
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="10"/>
+                        <circle cx="60" cy="60" r="50" fill="none"
+                                stroke="{% if security_score >= 60 %}#28a745{% elif security_score >= 40 %}#ffc107{% else %}#dc3545{% endif %}"
+                                stroke-width="10"
+                                stroke-dasharray="314"
+                                stroke-dashoffset="314"
+                                stroke-linecap="round"
+                                id="scoreCircle"/>
+                    </svg>
+                    <div class="position-absolute top-50 start-50 translate-middle">
+                        <h2 class="fw-bold mb-0 {% if security_score >= 60 %}text-success{% elif security_score >= 40 %}text-warning{% else %}text-danger{% endif %}">
+                            {{ security_score }}
+                        </h2>
+                    </div>
+                </div>
+                <h6 class="text-muted">Security Score</h6>
+                <small class="text-muted">out of 100</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appsec Summary Row -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center py-3">
+                <h3 class="fw-bold text-danger mb-0">{{ high_count }}</h3>
+                <small class="text-muted">High Risk</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center py-3">
+                <h3 class="fw-bold text-warning mb-0">{{ warning_count }}</h3>
+                <small class="text-muted">Warnings</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center py-3">
+                <h3 class="fw-bold text-info mb-0">{{ info_count }}</h3>
+                <small class="text-muted">Info</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center py-3">
+                <h3 class="fw-bold text-success mb-0">{{ secure_count }}</h3>
+                <small class="text-muted">Secure</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="d-flex gap-2 mb-4 flex-wrap">
+    <a href="{% url 'mobsf' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Back
+    </a>
+    <a href="{% url 'mobsf_pdf' file_hash=file_hash %}" class="btn btn-outline-info">
+        <i class="fas fa-file-pdf me-1"></i> Download PDF
+    </a>
+    <a href="{{ mobsf_url }}" target="_blank" class="btn btn-outline-primary">
+        <i class="fas fa-external-link-alt me-1"></i> Open in MobSF
+    </a>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" role="tablist" style="border-color: var(--border);">
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="tab" href="#permissions">
+            <i class="fas fa-key me-1"></i> Permissions
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#manifest">
+            <i class="fas fa-file-code me-1"></i> Manifest
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#security">
+            <i class="fas fa-shield-alt me-1"></i> Security Analysis
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#certificate">
+            <i class="fas fa-certificate me-1"></i> Certificate
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#network">
+            <i class="fas fa-globe me-1"></i> Network
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#rawjson">
+            <i class="fas fa-code me-1"></i> Raw JSON
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+
+    <!-- Permissions Tab -->
+    <div class="tab-pane fade show active" id="permissions">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="border-0 py-3 ps-4">Permission</th>
+                                <th class="border-0 py-3">Status</th>
+                                <th class="border-0 py-3">Info</th>
+                                <th class="border-0 py-3">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for perm_name, perm_info in report.permissions.items %}
+                            <tr>
+                                <td class="ps-4 py-3">
+                                    <code class="text-primary">{{ perm_name }}</code>
+                                </td>
+                                <td class="py-3">
+                                    <span class="badge {% if perm_info.status == 'dangerous' %}bg-danger{% elif perm_info.status == 'normal' %}bg-success{% else %}bg-warning text-dark{% endif %} px-2">
+                                        {{ perm_info.status|default:"unknown" }}
+                                    </span>
+                                </td>
+                                <td class="py-3">{{ perm_info.info|default:"-" }}</td>
+                                <td class="py-3"><small class="text-muted">{{ perm_info.description|default:"-" }}</small></td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">No permissions data available</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manifest Tab -->
+    <div class="tab-pane fade" id="manifest">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% if report.manifest_analysis %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-4">
+                        <thead>
+                            <tr>
+                                <th class="border-0 py-3">Severity</th>
+                                <th class="border-0 py-3">Title</th>
+                                <th class="border-0 py-3">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in report.manifest_analysis %}
+                            <tr>
+                                <td class="py-3">
+                                    <span class="badge {% if item.severity == 'high' %}bg-danger{% elif item.severity == 'warning' %}bg-warning text-dark{% elif item.severity == 'info' %}bg-info{% else %}bg-secondary{% endif %}">
+                                        {{ item.severity|default:"info" }}
+                                    </span>
+                                </td>
+                                <td class="py-3 fw-semibold">{{ item.title|default:"-" }}</td>
+                                <td class="py-3"><small>{{ item.description|default:"-" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+                {% if report.android_manifest %}
+                <h6 class="fw-semibold mb-2">AndroidManifest.xml</h6>
+                <pre class="p-3 rounded" style="background: var(--card-grey); max-height: 500px; overflow: auto; font-size: 0.8rem;"><code>{{ report.android_manifest }}</code></pre>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Analysis Tab -->
+    <div class="tab-pane fade" id="security">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                {% if report.code_analysis %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="border-0 py-3 ps-4">Severity</th>
+                                <th class="border-0 py-3">Issue</th>
+                                <th class="border-0 py-3">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for title, details in report.code_analysis.items %}
+                            <tr>
+                                <td class="ps-4 py-3">
+                                    <span class="badge {% if details.level == 'high' %}bg-danger{% elif details.level == 'warning' %}bg-warning text-dark{% elif details.level == 'info' %}bg-info{% else %}bg-secondary{% endif %}">
+                                        {{ details.level|default:"info" }}
+                                    </span>
+                                </td>
+                                <td class="py-3 fw-semibold">{{ title }}</td>
+                                <td class="py-3"><small>{{ details.description|default:"-" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fas fa-shield-alt fs-1 mb-3 d-block"></i>
+                    No code analysis data available
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Certificate Tab -->
+    <div class="tab-pane fade" id="certificate">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% if report.certificate_analysis %}
+                <div class="row g-4">
+                    {% if report.certificate_analysis.certificate_info %}
+                    <div class="col-12">
+                        <h6 class="fw-semibold mb-3">Certificate Information</h6>
+                        <pre class="p-3 rounded" style="background: var(--card-grey); font-size: 0.85rem; max-height: 400px; overflow: auto;"><code>{{ report.certificate_analysis.certificate_info }}</code></pre>
+                    </div>
+                    {% endif %}
+                    {% if report.certificate_analysis.certificate_findings %}
+                    <div class="col-12">
+                        <h6 class="fw-semibold mb-3">Certificate Findings</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th class="border-0 py-3">Severity</th>
+                                        <th class="border-0 py-3">Finding</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for finding in report.certificate_analysis.certificate_findings %}
+                                    <tr>
+                                        <td class="py-3">
+                                            <span class="badge {% if finding.1 == 'high' %}bg-danger{% elif finding.1 == 'warning' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                                                {{ finding.1|default:"info" }}
+                                            </span>
+                                        </td>
+                                        <td class="py-3">{{ finding.0|default:"-" }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fas fa-certificate fs-1 mb-3 d-block"></i>
+                    No certificate data available
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Network Tab -->
+    <div class="tab-pane fade" id="network">
+
+        <!-- Network Connection Graph -->
+        {% if report.urls or report.domains or report.emails %}
+        {{ network_domains_json|json_script:"mobsf-net-domains" }}
+        {{ network_urls_json|json_script:"mobsf-net-urls" }}
+        {{ network_emails_json|json_script:"mobsf-net-emails" }}
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header border-0 d-flex align-items-center justify-content-between" style="background: var(--card-grey);">
+                <h5 class="mb-0"><i class="fas fa-share-alt me-2 text-success"></i> Network Connection Graph</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge" style="background:#1a5c1a;border:1px solid #2ecc71;font-size:0.7rem;">App</span>
+                    <span class="badge" style="background:#1a3a5c;border:1px solid #3498db;font-size:0.7rem;">Domain</span>
+                    <span class="badge" style="background:#5c1a1a;border:1px solid #e74c3c;font-size:0.7rem;">IP Address</span>
+                    <span class="badge" style="background:#5c3d1a;border:1px solid #e67e22;font-size:0.7rem;">URL Host</span>
+                    <span class="badge" style="background:#3d1a5c;border:1px solid #9b59b6;font-size:0.7rem;">Email</span>
+                    <button id="mobsf-net-graph-fit" class="btn btn-sm btn-outline-secondary ms-2">
+                        <i class="fas fa-compress-arrows-alt me-1"></i>Fit
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="mobsf-net-graph-container" style="width:100%;height:520px;background:#0d0d1a;border-radius:0 0 8px 8px;position:relative;">
+                    <div id="mobsf-net-graph-loading" class="d-flex align-items-center justify-content-center h-100 text-secondary">
+                        <i class="fas fa-spinner fa-spin me-2"></i> Loading graph…
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function () {
+            var graphReady = false;
+
+            function initMobsfNetGraph() {
+                if (graphReady) return;
+                graphReady = true;
+                if (window.vis && window.vis.Network) {
+                    buildMobsfNetGraph();
+                } else {
+                    if (!document.getElementById('vis-css')) {
+                        var link = document.createElement('link');
+                        link.id  = 'vis-css';
+                        link.rel = 'stylesheet';
+                        link.href = 'https://cdn.jsdelivr.net/npm/vis-network@9/styles/vis-network.min.css';
+                        document.head.appendChild(link);
+                    }
+                    var s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/vis-network@9/standalone/umd/vis-network.min.js';
+                    s.onload = buildMobsfNetGraph;
+                    document.head.appendChild(s);
+                }
+            }
+
+            /* Trigger when Network tab becomes active */
+            var networkTabLinks = document.querySelectorAll('a[data-bs-toggle="tab"][href="#network"]');
+            networkTabLinks.forEach(function(tab) {
+                tab.addEventListener('shown.bs.tab', initMobsfNetGraph);
+                tab.addEventListener('click', function() {
+                    setTimeout(initMobsfNetGraph, 150);
+                });
+            });
+
+            /* If Network tab is already active on page load, init immediately */
+            var networkPane = document.getElementById('network');
+            if (networkPane && networkPane.classList.contains('show')) {
+                initMobsfNetGraph();
+            }
+
+            document.getElementById('mobsf-net-graph-fit').addEventListener('click', function () {
+                if (window._mobsfNetGraph) window._mobsfNetGraph.fit({ animation: true });
+            });
+
+            function parse(id) {
+                try { return JSON.parse(document.getElementById(id).textContent || '[]'); }
+                catch (e) { return []; }
+            }
+
+            function extractHost(url) {
+                try {
+                    var m = url.match(/^https?:\/\/([^/:?#]+)/);
+                    return m ? m[1] : null;
+                } catch (e) { return null; }
+            }
+
+            function buildMobsfNetGraph() {
+                var domains = parse('mobsf-net-domains');
+                var urls    = parse('mobsf-net-urls');
+                var emails  = parse('mobsf-net-emails');
+
+                document.getElementById('mobsf-net-graph-loading').style.display = 'none';
+
+                var nodes = new vis.DataSet();
+                var edges = new vis.DataSet();
+                var seen  = {};
+                var edgeSeen = {};
+
+                /* --- App (center) node --- */
+                var appName = '{{ app_name|default:"App"|escapejs }}';
+                nodes.add({
+                    id: 'app',
+                    label: appName || 'App',
+                    shape: 'ellipse',
+                    color: { background: '#1a5c1a', border: '#2ecc71',
+                             highlight: { background: '#27ae60', border: '#1abc9c' } },
+                    font: { color: '#ffffff', size: 14, bold: true },
+                    size: 28
+                });
+
+                function addEdge(from, to, label, color) {
+                    var key = from + '→' + to + label;
+                    if (edgeSeen[key]) return;
+                    edgeSeen[key] = true;
+                    edges.add({
+                        from: from, to: to,
+                        label: label,
+                        arrows: 'to',
+                        color: { color: color, highlight: color },
+                        font: { color: '#aaaaaa', size: 9, align: 'middle' },
+                        smooth: { type: 'dynamic' }
+                    });
+                }
+
+                /* --- Domain nodes --- */
+                domains.forEach(function (d) {
+                    var domName = d.domain;
+                    var domId = 'dom:' + domName;
+                    if (!seen[domId]) {
+                        seen[domId] = true;
+                        var label = domName.length > 35 ? domName.slice(0, 35) + '…' : domName;
+                        var title = domName;
+                        if (d.geolocation) title += '\n' + d.geolocation;
+                        if (d.ip) title += '\nIP: ' + d.ip;
+                        nodes.add({
+                            id: domId,
+                            label: label,
+                            shape: 'diamond',
+                            color: { background: '#1a3a5c', border: '#3498db',
+                                     highlight: { background: '#2980b9', border: '#3498db' } },
+                            font: { color: '#b0c8ff', size: 11 },
+                            title: title
+                        });
+                        addEdge('app', domId, 'domain', '#3498db');
+                    }
+                    /* If domain has IP, add IP node */
+                    if (d.ip) {
+                        var ipId = 'ip:' + d.ip;
+                        if (!seen[ipId]) {
+                            seen[ipId] = true;
+                            var ipLabel = d.ip;
+                            if (d.geolocation) ipLabel += '\n' + d.geolocation;
+                            nodes.add({
+                                id: ipId,
+                                label: ipLabel,
+                                shape: 'box',
+                                color: { background: '#5c1a1a', border: '#e74c3c',
+                                         highlight: { background: '#c0392b', border: '#e74c3c' } },
+                                font: { color: '#ffffff', size: 11 },
+                                title: 'IP: ' + d.ip
+                            });
+                        }
+                        addEdge(domId, ipId, 'resolves', '#27ae60');
+                    }
+                });
+
+                /* --- URL host nodes --- */
+                var urlHosts = {};
+                urls.forEach(function (u) {
+                    var host = extractHost(u);
+                    if (!host) return;
+                    if (!urlHosts[host]) urlHosts[host] = [];
+                    urlHosts[host].push(u);
+                });
+                Object.keys(urlHosts).forEach(function (host) {
+                    /* Skip if it's already a domain node */
+                    var hostId = 'host:' + host;
+                    var domId  = 'dom:' + host;
+                    if (seen[domId]) {
+                        /* just add edge count */
+                        addEdge('app', domId, urlHosts[host].length + ' URLs', '#e67e22');
+                        return;
+                    }
+                    if (!seen[hostId]) {
+                        seen[hostId] = true;
+                        nodes.add({
+                            id: hostId,
+                            label: host.length > 30 ? host.slice(0, 30) + '…' : host,
+                            shape: 'box',
+                            color: { background: '#5c3d1a', border: '#e67e22',
+                                     highlight: { background: '#d35400', border: '#e67e22' } },
+                            font: { color: '#ffe0b0', size: 10 },
+                            title: urlHosts[host].length + ' URL(s):\n' + urlHosts[host].slice(0, 5).join('\n')
+                        });
+                        addEdge('app', hostId, urlHosts[host].length + ' URLs', '#e67e22');
+                    }
+                });
+
+                /* --- Email nodes --- */
+                emails.forEach(function (email) {
+                    var eId = 'email:' + email;
+                    if (!seen[eId]) {
+                        seen[eId] = true;
+                        nodes.add({
+                            id: eId,
+                            label: email,
+                            shape: 'dot',
+                            color: { background: '#3d1a5c', border: '#9b59b6',
+                                     highlight: { background: '#8e44ad', border: '#9b59b6' } },
+                            font: { color: '#d8b0ff', size: 10 },
+                            title: email,
+                            size: 12
+                        });
+                        addEdge('app', eId, 'email', '#9b59b6');
+                    }
+                });
+
+                /* --- Render --- */
+                var container = document.getElementById('mobsf-net-graph-container');
+                var options = {
+                    layout: { improvedLayout: true },
+                    physics: {
+                        forceAtlas2Based: {
+                            gravitationalConstant: -50,
+                            centralGravity: 0.012,
+                            springLength: 140,
+                            springConstant: 0.04
+                        },
+                        maxVelocity: 50,
+                        solver: 'forceAtlas2Based',
+                        timestep: 0.35,
+                        stabilization: { iterations: 150 }
+                    },
+                    interaction: { hover: true, tooltipDelay: 100, zoomView: true, dragView: true },
+                    edges: { width: 1.5 },
+                    nodes: { borderWidth: 2 }
+                };
+                var network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
+                window._mobsfNetGraph = network;
+            }
+        }());
+        </script>
+        {% endif %}
+
+        <!-- URLs Table -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% if report.urls %}
+                <h6 class="fw-semibold mb-3"><i class="fas fa-link me-2 text-warning"></i>URLs Found</h6>
+                <div class="table-responsive mb-4">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr><th class="border-0 py-3 ps-4">URL</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for url_data in report.urls %}
+                            <tr>
+                                <td class="ps-4 py-2">
+                                    {% if url_data.urls %}
+                                    <code style="word-break: break-all;">{{ url_data.urls }}</code>
+                                    {% else %}
+                                    <code style="word-break: break-all;">{{ url_data }}</code>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if report.domains %}
+                <h6 class="fw-semibold mb-3"><i class="fas fa-globe me-2 text-primary"></i>Domains</h6>
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                    {% for domain in report.domains %}
+                    <span class="badge bg-primary bg-opacity-10 text-secondary px-3 py-2">
+                        {% if domain.domain %}{{ domain.domain }}{% else %}{{ domain }}{% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if report.emails %}
+                <h6 class="fw-semibold mb-3"><i class="fas fa-envelope me-2 text-info"></i>Emails</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for email in report.emails %}
+                    <span class="badge bg-warning bg-opacity-10 text-warning px-3 py-2">{{ email }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if not report.urls and not report.domains and not report.emails %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fas fa-globe fs-1 mb-3 d-block"></i>
+                    No network data available
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Raw JSON Tab -->
+    <div class="tab-pane fade" id="rawjson">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Full JSON Report</h6>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="copyJSON()">
+                        <i class="fas fa-copy me-1"></i> Copy
+                    </button>
+                </div>
+                <pre class="p-3 rounded" id="rawJsonContent"
+                     style="background: var(--card-grey); max-height: 600px; overflow: auto; font-size: 0.75rem;"><code>{{ report|pprint }}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyJSON() {
+    const text = document.getElementById('rawJsonContent').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        alert('JSON copied to clipboard');
+    });
+}
+
+// Animate score circle
+document.addEventListener('DOMContentLoaded', function() {
+    const circle = document.getElementById('scoreCircle');
+    if (circle) {
+        const score = {{ security_score }};
+        const offset = 314 - (314 * score / 100);
+        setTimeout(() => {
+            circle.style.transition = 'stroke-dashoffset 1s ease-in-out';
+            circle.style.strokeDashoffset = offset;
+        }, 300);
+    }
+});
+</script>
+
+{% endif %}
+{% endblock %}

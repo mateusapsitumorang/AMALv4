@@ -18,3 +18,5 @@ def handler403(request, exception=None):
 
 def handler404(request, exception=None):
     return redirect("/")
+
+

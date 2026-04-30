@@ -1,0 +1,20 @@
+{% extends 'two_factor/_base_focus.html' %}
+{% load i18n %}
+
+{% block content %}
+  <div class="w-100 m-0 start-0 top-0 d-flex justify-content-center align-items-center flex-column position-absolute" style="min-height: 100vh;">
+    <h1>
+      {% block title %}
+        {% trans 'Disable Two-factor Authentication' %}
+      {% endblock %}
+    </h1>
+    <p>
+      {% blocktrans trimmed %}You are about to disable two-factor authentication. This weakens your account security, are you sure?{% endblocktrans %}
+    </p>
+    <form method="post" class="d-flex flex-column justify-content-center gap-2">
+      {% csrf_token %}
+      <table>{{ form.as_table }}</table>
+      <button class="btn btn-danger" type="submit">{% trans 'Disable' %}</button>
+    </form>
+  </div>
+{% endblock %}

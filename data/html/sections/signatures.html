@@ -1,24 +1,69 @@
-<div class="card mt-4">
-    <div class="card-header">
-        Signatures
+<style>
+.sig-item { border-left: 3px solid transparent; background-color: #1e2130; transition: background 0.15s ease; cursor: pointer; }
+.sig-item:hover { background-color: #252840 !important; }
+.sig-text { font-size: 0.875rem; font-weight: 500; }
+.sig-chevron { font-size: 0.7rem; opacity: 0.5; transition: transform 0.2s ease; }
+.sig-item[aria-expanded="true"] .sig-chevron { transform: rotate(180deg); opacity: 0.9; }
+.sig-critical { border-left-color: #ED6B60 !important; }
+.sig-critical .sig-text { color: #f7a8a3 !important; }
+.sig-critical .sig-icon { color: #ED6B60 !important; }
+.sig-critical:hover { background-color: rgba(237,107,96,0.1) !important; }
+.sig-warning { border-left-color: #FED71F !important; }
+.sig-warning .sig-text { color: #ffe97a !important; }
+.sig-warning .sig-icon { color: #FED71F !important; }
+.sig-warning:hover { background-color: rgba(254,215,31,0.08) !important; }
+.sig-info { border-left-color: #6384FF !important; }
+.sig-info .sig-text { color: #a0b4ff !important; }
+.sig-info .sig-icon { color: #6384FF !important; }
+.sig-info:hover { background-color: rgba(99,132,255,0.08) !important; }
+.sig-low { border-left-color: #4ab5b0 !important; }
+.sig-low .sig-text { color: #a2d8d5 !important; }
+.sig-low .sig-icon { color: #4ab5b0 !important; }
+.sig-low:hover { background-color: rgba(74,181,176,0.08) !important; }
+</style>
+
+{% if results.signatures %}
+<section id="signatures" class="mb-4">
+  <div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary">
+      <h5 class="mb-0 text-white"><i class="fas fa-file-signature me-2 text-warning"></i> Signatures</h5>
     </div>
     <div class="card-body">
-        {% if results.signatures %}
-            <ul class="list-group">
-                {% for sign in results.signatures %}
-                    {% if sign.severity == 1 %}
-                        <li class="list-group-item list-group-item-success">{{sign.description}}</li>
-                    {% elif sign.severity == 2 %}
-                        <li class="list-group-item list-group-item-warning">{{sign.description}}</li>
-                    {% elif sign.severity >= 3 %}
-                        <li class="list-group-item list-group-item-danger">{{sign.description}}</li>
-                    {% else %}
-                        <li class="list-group-item list-group-item-info">{{sign.description}}</li>
-                    {% endif %}
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p>No signatures matched.</p>
-        {% endif %}
+      <div class="d-flex flex-column gap-1">
+        {% for sign in results.signatures %}
+        <div>
+          <a href="#sig_collapse_{{ loop.index }}"
+             class="d-flex align-items-center justify-content-between px-3 py-2 rounded text-decoration-none sig-item {% if sign.severity >= 3 %}sig-critical{% elif sign.severity == 2 %}sig-warning{% elif sign.severity == 1 %}sig-info{% else %}sig-low{% endif %}"
+             data-bs-toggle="collapse" aria-expanded="false">
+            <div class="d-flex align-items-center gap-2">
+              {% if sign.severity <= 1 %}
+                <i class="fas fa-info-circle sig-icon"></i>
+              {% elif sign.severity == 2 %}
+                <i class="fas fa-exclamation-triangle sig-icon"></i>
+              {% elif sign.severity >= 3 %}
+                <i class="fas fa-biohazard sig-icon"></i>
+              {% endif %}
+              <span class="sig-text">{{ sign.description }}</span>
+            </div>
+            <i class="fas fa-chevron-down sig-chevron ms-2 flex-shrink-0"></i>
+          </a>
+          <div class="collapse" id="sig_collapse_{{ loop.index }}">
+            <div class="card card-body bg-dark text-white mt-1">
+              {% if sign.data %}
+                <div class="mb-3">
+                  {% for item in sign.data %}
+                    {% for key, value in item.items() %}
+                      <div class="mb-1"><strong class="text-light">{{ key }}:</strong> {{ value }}</div>
+                    {% endfor %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
-</div>
+  </div>
+</section>
+{% endif %}

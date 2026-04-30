@@ -1,0 +1,183 @@
+{# World Map of Contacted IPs — Leaflet.js with dark CartoDB tiles (Jinja2 report version) #}
+{% if results.network and results.network.hosts %}
+<section id="worldmap-overview" class="mb-4">
+  <div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary">
+      <h5 class="mb-0 text-white"><i class="fas fa-globe-americas me-2 text-danger"></i> World Map of Contacted IPs</h5>
+    </div>
+    <div class="card-body p-0">
+      <div id="worldmap" style="height: 420px; width: 100%; background: #1a1a2e;"></div>
+    </div>
+  </div>
+</section>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  var hostsRaw = [
+    {% for host in results.network.hosts %}
+    {% if not host.ip.startswith("192.168") and not host.ip.startswith("127.") and not host.ip.startswith("10.") %}
+    {
+      ip: "{{ host.ip }}",
+      country: "{{ host.country_name|default('', true) }}",
+      cc: "{{ host.country_code|default('', true) }}",
+      asn: "{{ host.asn|default('', true) }}",
+      asn_name: "{{ host.asn_name|default('', true) }}",
+      lat: {{ host.latitude if host.latitude is not none else "null" }},
+      lon: {{ host.longitude if host.longitude is not none else "null" }}
+    },
+    {% endif %}
+    {% endfor %}
+  ];
+
+  hostsRaw = hostsRaw.filter(function(h) { return h.ip; });
+
+  function initMap(hosts) {
+    var mapEl = document.getElementById('worldmap');
+    if (!mapEl || !hosts.length) {
+      var sect = document.getElementById('worldmap-overview');
+      if (sect && !hosts.length) sect.style.display = 'none';
+      return;
+    }
+
+    var map = L.map('worldmap', {
+      center: [20, 0],
+      zoom: 2,
+      minZoom: 2,
+      maxZoom: 10,
+      zoomControl: true,
+      attributionControl: false,
+      scrollWheelZoom: true
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(map);
+
+    var markers = L.featureGroup();
+    var lines = L.featureGroup();
+
+    var geoHosts = hosts.filter(function(h) {
+      return h.lat !== null && h.lon !== null && !isNaN(h.lat) && !isNaN(h.lon);
+    });
+
+    if (!geoHosts.length) {
+      var sect = document.getElementById('worldmap-overview');
+      if (sect) sect.style.display = 'none';
+      return;
+    }
+
+    var sumLat = 0, sumLon = 0;
+    geoHosts.forEach(function(h) { sumLat += h.lat; sumLon += h.lon; });
+    var origin = null;
+    if (geoHosts.length > 1) {
+      origin = [sumLat / geoHosts.length, sumLon / geoHosts.length];
+    }
+
+    var seen = {};
+    geoHosts.forEach(function(h) {
+      var key = h.lat.toFixed(2) + ',' + h.lon.toFixed(2);
+      if (!seen[key]) {
+        seen[key] = { lat: h.lat, lon: h.lon, ips: [] };
+      }
+      seen[key].ips.push(h);
+    });
+
+    Object.keys(seen).forEach(function(key) {
+      var loc = seen[key];
+      var circleMarker = L.circleMarker([loc.lat, loc.lon], {
+        radius: Math.min(4 + loc.ips.length * 2, 12),
+        fillColor: '#ff4444',
+        color: '#ff6666',
+        weight: 1,
+        opacity: 0.9,
+        fillOpacity: 0.8
+      });
+
+      var popupHtml = '<div style="font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;">';
+      loc.ips.forEach(function(h) {
+        var flag = h.cc ? '<img src="https://flagcdn.com/16x12/' + h.cc + '.png" style="margin-right:4px;vertical-align:middle;"> ' : '';
+        popupHtml += flag + '<b>' + h.ip + '</b>';
+        if (h.country) popupHtml += ' &mdash; ' + h.country;
+        if (h.asn) popupHtml += ' (' + h.asn + ')';
+        popupHtml += '<br>';
+      });
+      popupHtml += '</div>';
+      circleMarker.bindPopup(popupHtml);
+      markers.addLayer(circleMarker);
+
+      if (origin) {
+        var mid = [
+          (origin[0] + loc.lat) / 2 + (Math.abs(origin[1] - loc.lon) * 0.15),
+          (origin[1] + loc.lon) / 2
+        ];
+        var latlngs = _bezierCurve(origin, mid, [loc.lat, loc.lon], 20);
+        var line = L.polyline(latlngs, {
+          color: '#ff6644',
+          weight: 1.5,
+          opacity: 0.5,
+          dashArray: '4 4'
+        });
+        lines.addLayer(line);
+      }
+    });
+
+    lines.addTo(map);
+    markers.addTo(map);
+
+    if (markers.getLayers().length) {
+      map.fitBounds(markers.getBounds().pad(0.3));
+    }
+  }
+
+  function _bezierCurve(p0, p1, p2, n) {
+    var points = [];
+    for (var i = 0; i <= n; i++) {
+      var t = i / n;
+      var lat = (1 - t) * (1 - t) * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0];
+      var lon = (1 - t) * (1 - t) * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1];
+      points.push([lat, lon]);
+    }
+    return points;
+  }
+
+  var needLookup = hostsRaw.filter(function(h) {
+    return h.lat === null || h.lon === null;
+  });
+
+  if (needLookup.length === 0) {
+    initMap(hostsRaw);
+  } else {
+    var payload = needLookup.slice(0, 100).map(function(h) {
+      return { query: h.ip, fields: "status,lat,lon,query" };
+    });
+    fetch("http://ip-api.com/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var geoMap = {};
+      data.forEach(function(item) {
+        if (item.status === "success") {
+          geoMap[item.query] = { lat: item.lat, lon: item.lon };
+        }
+      });
+      hostsRaw.forEach(function(h) {
+        if ((h.lat === null || h.lon === null) && geoMap[h.ip]) {
+          h.lat = geoMap[h.ip].lat;
+          h.lon = geoMap[h.ip].lon;
+        }
+      });
+      initMap(hostsRaw);
+    })
+    .catch(function() {
+      initMap(hostsRaw);
+    });
+  }
+})();
+</script>
+{% endif %}

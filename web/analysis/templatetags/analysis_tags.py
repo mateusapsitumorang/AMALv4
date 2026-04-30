@@ -57,6 +57,22 @@ def is_dict(value):
     return isinstance(value, dict)
 
 
+@register.simple_tag
+def get_user_info(user_id):
+    """Resolve user_id to {username, unit, organization}."""
+    from django.contrib.auth.models import User
+    try:
+        user = User.objects.select_related("userprofile").get(pk=int(user_id))
+        profile = getattr(user, "userprofile", None)
+        return {
+            "username": user.username,
+            "unit": getattr(profile, "unit", "") if profile else "",
+            "organization": getattr(profile, "organization", "") if profile else "",
+        }
+    except (User.DoesNotExist, ValueError, TypeError):
+        return {"username": "Unknown", "unit": "", "organization": ""}
+
+
 @register.filter
 def get_item(dictionary, key):
     return dictionary.get(key, "")

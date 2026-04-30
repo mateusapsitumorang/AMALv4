@@ -1,349 +1,1227 @@
-{% extends "base.html" %}
-{% block title %}Dashboard · CAPE Sandbox{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+<style>
+  .btn-outline-info:hover {
+    color: #fff !important;
+    background-color: #6384ff !important;
+    border-color: #6384ff !important;
+  }
+  .btn-outline-info {
+    border-color: #6384ff !important;
+  }
+  .btn-outline-info:hover i {
+    color: #fff !important;
+  }
+  
+  .badge-target-table {
+    background-color: #ed6b60 !important;
+    color: #ffffff !important;
+    transition: color 0.2s ease-in-out !important;
+    text-decoration: none !important;
+  }
+
+  .badge-target-table:hover,
+  .badge-target-table:active {
+    color: #000000 !important;
+  }
+  
+  a.btn-stat-link:hover i.fas.fa-chart-pie.me-2,
+  a.btn-stat-link:active i.fas.fa-chart-pie.me-2 {
+    color: #000000 !important;
+  }
+  
+  .badge-target-moloch {
+    background-color: #6384ff !important;
+    color: #ffffff !important;
+    transition: color 0.2s ease-in-out !important;
+    text-decoration: none !important;
+  }
+  
+  .badge-target-moloch:hover {
+    color: #000000 !important;
+  }
+  
+  .btn-custom-cancel {
+    background-color: transparent;
+    color: #6384ff;
+    border: 1px solid #6384ff;
+    transition: all 0.2s ease;
+  }
+  .btn-custom-cancel:hover {
+    background-color: #6384ff;
+    color: #ffffff !important;
+  }
+  
+  .btn-custom-delete {
+    background-color: transparent;
+    color: #f40f02;
+    border: 1px solid #6384ff;
+    transition: all 0.2s ease;
+  }
+  .btn-custom-delete:hover {
+    background-color: #f40f02;
+    color: #ffffff !important;
+  }
+  
+  .btn-custom-cancel:active,
+  .btn-custom-delete:active {
+    transform: scale(0.95);
+  }
+  .alert-custom-danger {
+    background-color: #f40f02;
+    color: #ffffff;
+    border: none;
+  }
+  @keyframes machinePulse {
+    0%,
+    100% {
+      opacity: 100;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+</style>
+{% extends 'base.html' %}
+{% block title %}
+  Dashboard · AMALV4 Sandbox
+{% endblock %}
+{% block page_title %}
+  Dashboard
+{% endblock %}
 {% block content %}
+  <!-- CPU, Memory, Disk, and service status -->
+  <div class="mb-4">
+    <div class="container-fluid fh-dashboard">
+      <!-- Overview -->
+      <!-- Overview -->
+      <div class="row g-3 mb-4">
+        <div class="col-md-3 col-6">
+          <div id="dashCpuCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+            <div id="dashCpuLabel" style="font-size:0.8rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:#30b22d;">CPU Usage</div>
+            <div id="fhCpuValue" style="font-size:2rem;font-weight:800;color:#30b22d;line-height:1;">—</div>
+            <div style="margin-top:10px;position:relative;width:100%;height:52px;">
+              <canvas id="dashCpuSpark" role="img" aria-label="CPU sparkline"></canvas>
+            </div>
+          </div>
+        </div>
 
-<!-- Dashboard Stats Cards -->
-<div class="row g-4 mb-4">
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-2">Total Tasks</h6>
-                        <h2 class="fw-bold text-primary mb-0">{{report.total_tasks}}</h2>
-                    </div>
-                    <div class="bg-success bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-tasks text-primary fs-4"></i>
-                    </div>
-                </div>
-                <small class="text-success"><i class="fas fa-arrow-up me-1"></i>Analysis queue</small>
+        <div class="col-md-3 col-6">
+          <div id="dashMemCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+            <div id="dashMemLabel" style="font-size:0.8rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:#30b22d;">Memory Usage</div>
+            <div id="fhMemValue" style="font-size:2rem;font-weight:800;color:#30b22d;line-height:1;">—</div>
+            <div style="margin-top:10px;position:relative;width:100%;height:52px;">
+              <canvas id="dashMemSpark" role="img" aria-label="Memory sparkline"></canvas>
             </div>
+          </div>
         </div>
-    </div>
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-2">Total Samples</h6>
-                        <h2 class="fw-bold text-success mb-0">{{report.total_samples}}</h2>
-                    </div>
-                    <div class="bg-success bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-vial text-success fs-4"></i>
-                    </div>
-                </div>
-                <small class="text-muted"><i class="fas fa-database me-1"></i>Unique samples</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-2">Per Hour</h6>
-                        <h2 class="fw-bold text-info mb-0">~{{report.estimate_hour}}</h2>
-                    </div>
-                    <div class="bg-info bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-clock text-info fs-4"></i>
-                    </div>
-                </div>
-                <small class="text-muted"><i class="fas fa-stopwatch me-1"></i>Average speed</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-2">Per Day</h6>
-                        <h2 class="fw-bold text-warning mb-0">~{{report.estimate_day}}</h2>
-                    </div>
-                    <div class="bg-warning bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-calendar-day text-warning fs-4"></i>
-                    </div>
-                </div>
-                <small class="text-muted"><i class="fas fa-chart-line me-1"></i>Daily estimate</small>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Statistics Overview -->
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-chart-line me-2 text-info"></i>Statistics Overview <small class="text-white-50">(Last {{days}} days)</small></h5>
+        <div class="col-md-3 col-6">
+          <div id="dashDiskCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+            <div id="dashDiskLabel" style="font-size:0.8rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:#30b22d;">Disk Usage</div>
+            <div id="fhDiskValue" style="font-size:2rem;font-weight:800;color:#30b22d;line-height:1;">—</div>
+            <div style="margin-top:10px;position:relative;width:100%;height:52px;">
+              <canvas id="dashDiskSpark" role="img" aria-label="Disk sparkline"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3 col-6">
+          <div class="p-3 rounded h-100" style="border:1px solid rgba(129,140,248,0.25);border-left:3px solid #818cf8;background:rgba(129,140,248,0.04);">
+            <!-- Icon + Count Row -->
+            <div class="d-flex align-items-center gap-3 mb-2">
+              <img src="/static/img/computer-icon.png" style="width:100px;height:auto;flex-shrink:0;
+                  filter:brightness(0) saturate(100%) invert(55%) sepia(60%) saturate(400%) hue-rotate(200deg) brightness(90%);" alt="Computer Icon" />
+
+              <div style="min-width:0;flex:1; margin-top:20px;">
+                <div style="font-size:0.8rem;font-weight:700;letter-spacing:.14em;
+                        text-transform:uppercase;color:#818cf8;margin-bottom:5px;">Machines</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <div id="fhMachineValue" style="font-size:2rem;font-weight:800;color:#818cf8;line-height:1;">{{ machines|length }}</div>
+                  <div style="font-size:0.7rem;color:#818cf8;">available</div>
+                </div>
+                <!-- Slide -->
+                {% if machines %}
+                  <div style="position:relative;height:18px;overflow:hidden;max-width:100%;">
+                    <div id="machineTicker" style="position:relative;height:18px;"></div>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Disk + Service -->
+      <div class="row mt-4 g-4">
+        <div class="col-md-6">
+          <div class="card bg-dark border-secondary">
+            <div class="card-body">
+              <h5>Disk Usage</h5>
+
+              <!-- ========== DARK DONUT DISK CHART (replaces Chart.js doughnut) ========== -->
+              <div class="fh-disk-wrap">
+                <div class="fh-disk-chart-row">
+                  <canvas id="fhDiskCanvas" width="240" height="240"></canvas>
+                  <div class="fh-disk-labels">
+                    <div class="fh-disk-label-item">
+                      <span class="fh-disk-pct fh-pct-blue" id="fhDiskUsedLabel">0%</span>
+                      <span class="fh-disk-title fh-title-blue">DISK USED</span>
+                      <span class="fh-disk-desc">Space currently consumed on the server storage.</span>
+                    </div>
+                    <div class="fh-disk-label-item">
+                      <span class="fh-disk-pct fh-pct-red" id="fhDiskFreeLabel">100%</span>
+                      <span class="fh-disk-title fh-title-red">DISK FREE</span>
+                      <span class="fh-disk-desc">Available storage space remaining on the system.</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="fh-disk-legend">
+                  <div class="fh-legend-item">
+                    <div class="fh-legend-dot" style="background:linear-gradient(90deg,#2864dc,#6ec8ff)"></div>Used
+                  </div>
+                  <div class="fh-legend-item">
+                    <div class="fh-legend-dot" style="background:linear-gradient(90deg,#c8326e,#ff6456)"></div>Free
+                  </div>
+                </div>
+              </div>
+              <!-- ========== END DARK DONUT DISK CHART ========== -->
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 d-flex flex-column">
+          <div class="card fh-card bg-dark border-secondary flex-grow-1">
+            <div class="card-body">
+              <h5>Service Status</h5>
+              <table class="table table-striped">
+                <tbody id="fhServiceTable">
+                  <tr>
+                    <td scope="row">Internet</td>
+                    <td id="internetStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td scope="row">Cape</td>
+                    <td id="capeStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td scope="row">Nginx</td>
+                    <td id="nginxStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td scope="row">Suricata</td>
+                    <td id="suricataStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td scope="row">MISP</td>
+                    <td id="mispStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td scope="row">MOBSF</td>
+                    <td id="mobsfStatus">-</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="row mt-4 g-4">
+        <div class="col-md-6">
+          <div class="card bg-dark border-secondary">
+            <div class="card-body">
+              <h5>CPU Trend</h5>
+              <canvas id="fhCpuChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card bg-dark border-secondary">
+            <div class="card-body">
+              <h5>Memory Trend</h5>
+              <canvas id="fhMemChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- End of CPU, Memory, Disk, and service status -->
+
+  <!-- Dashboard Stats Cards -->
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card h-100 bg-dark border-secondary shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+              <h6 class="text-muted mb-2">Total Tasks</h6>
+              <h2 class="fw-bold text-primary mb-0">{{ report.total_tasks }}</h2>
+            </div>
+            <div class="p-3">
+              <i class="fas fa-tasks text-primary fs-4"></i>
+            </div>
+          </div>
+          <small class="text-success"><i class="fas fa-arrow-up me-1"></i>Analysis queue</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card h-100 bg-dark border-secondary shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+              <h6 class="text-muted mb-2">Total Samples</h6>
+              <h2 class="fw-bold text-success mb-0">{{ report.total_samples }}</h2>
+            </div>
+            <div class="p-3">
+              <i class="fas fa-vial text-success fs-4"></i>
+            </div>
+          </div>
+          <small class="text-muted"><i class="fas fa-database me-1"></i>Unique samples</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card h-100 bg-dark border-secondary shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+              <h6 class="text-muted mb-2">Per Hour</h6>
+              <h2 class="fw-bold text-info mb-0">~{{ report.estimate_hour }}</h2>
+            </div>
+            <div class="p-3">
+              <i class="fas fa-clock text-info fs-4"></i>
+            </div>
+          </div>
+          <small class="text-muted"><i class="fas fa-stopwatch me-1"></i>Average speed</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card h-100 bg-dark border-secondary shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+              <h6 class="text-muted mb-2">Per Day</h6>
+              <h2 class="fw-bold text-warning mb-0">~{{ report.estimate_day }}</h2>
+            </div>
+            <div class="p-3">
+              <i class="fas fa-calendar-day text-warning fs-4"></i>
+            </div>
+          </div>
+          <small class="text-muted"><i class="fas fa-chart-line me-1"></i>Daily estimate</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Analyses -->
+  {% if recent_analyses %}
+    <div class="card bg-dark border-secondary shadow-sm mb-4">
+      <div class="card-header bg-transparent border-secondary py-3 d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center">
+          <h5 class="mb-0 fw-semibold"><i class="fas fa-clock me-2 text-white-50"></i>Recent Analysis</h5>
+        </div>
+        <a href="{% url 'analysis' %}" class="btn btn-sm btn-outline-info">View All <i class="fas fa-arrow-right ms-1"></i></a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="bg-light">
+              <tr>
+                <th class="border-0 py-3 ps-4" style="width:6%;">ID</th>
+                <th class="border-0 py-3" style="width:14%;">Timestamp</th>
+                <th class="border-0 py-3" style="width:8%;">Category</th>
+                <th class="border-0 py-3" style="width:28%;">Filename</th>
+                <th class="border-0 py-3" style="width:14%;">Detections</th>
+                <th class="border-0 py-3" style="width:8%;">MalScore</th>
+                <th class="border-0 py-3" style="width:6%;">Docx</th>
+                <th class="border-0 py-3 text-end pe-4" style="width:12%;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in recent_analyses %}
+                <tr style="cursor:pointer;"
+                  onclick="window.location='{% if a.status == 'reported' or a.status == 'recovered' %}
+                    {% url 'report' a.id %}
+                  {% else %}
+                    {% url 'submission_status' a.id %}
+                  {% endif %}'">
+                  <td class="ps-4 py-3">
+                    <span class="fw-bold text-dark">{{ a.id }}</span>
+                  </td>
+                  <td class="py-3">
+                    <small>
+                      {% if a.completed_on %}
+                        {{ a.completed_on }}
+                      {% else %}
+                        {{ a.added_on }}
+                      {% endif %}
+                    </small>
+                  </td>
+                  <td class="py-3">
+                    {% if a.category == 'file' %}
+                      <span class="badge bg-primary bg-opacity-15" style="color: #ffffff !important;"><i class="fas fa-file me-1"></i>File</span>
+                    {% elif a.category == 'url' %}
+                      <span class="badge bg-info bg-opacity-15" style="color: #000 !important;"><i class="fas fa-globe me-1"></i>URL</span>
+                    {% elif a.category == 'static' %}
+                      <span class="badge bg-secondary" style="color: #fff !important;"><i class="fas fa-file-code me-1"></i>Static</span>
+                    {% elif a.category == 'pcap' %}
+                      <span class="badge bg-warning bg-opacity-15" style="color: #000 !important;"><i class="fas fa-network-wired me-1"></i>PCAP</span>
+                    {% else %}
+                      <span class="badge bg-dark" style="color: #fff !important;">{{ a.category }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="py-3 text-truncate" style="max-width: 280px;" title="{{ a.filename }}">
+                    <span class="text-body">{{ a.filename|truncatechars:45 }}</span>
+                  </td>
+                  <td class="py-3">
+                    {% if a.detections %}
+                      {% if a.detections|is_string %}
+                        <a href="/analysis/search/detections:{{ a.detections }}" class="badge badge-target-table">{{ a.detections }}</a>
+                      {% elif a.detections|length == 1 %}
+                        <a href="/analysis/search/detections:{{ a.detections.0.family }}" class="badge badge-target-table" data-bs-toggle="tooltip" title="{{ a.detections.0.details }}">{{ a.detections.0.family }}</a>
+                      {% elif a.detections|length > 1 %}
+                        <a href="/analysis/search/detections:{{ a.detections.0.family|urlencode }}"
+                          class="badge badge-target-table"
+                          style="cursor: pointer; position: relative; z-index: 5; display: inline-block;"
+                          data-bs-toggle="tooltip"
+                          data-bs-placement="top"
+                          title="{% for block in a.detections %}
+                            {% if block.family %}
+                              {{ block.family }}&#013;
+                            {% endif %}
+                          {% endfor %}">
+                          Multiple ({{ a.detections|length }})
+                        </a>
+                      {% endif %}
+                    {% else %}
+                      <span class="text-muted">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="py-3">
+                    {% if a.malscore %}
+                      {% if a.malscore >= 7 %}
+                        <span class="badge bg-danger px-2 py-1">{{ a.malscore|floatformat:1 }}/10</span>
+                      {% elif a.malscore >= 4 %}
+                        <span class="badge bg-warning text-black px-2 py-1">{{ a.malscore|floatformat:1 }}/10</span>
+                      {% else %}
+                        <span class="badge bg-success px-2 py-1">{{ a.malscore|floatformat:1 }}/10</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="text-muted">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="py-3" onclick="event.stopPropagation();">
+                    {% if a.status == 'reported' or a.status == 'recovered' %}
+                      <a href="{% url 'export_docx' a.id %}" class="btn btn-sm btn-custom-docx py-0 px-2" title="Download DOCX Report"><i class="fas fa-file-word"></i></a>
+                    {% else %}
+                      <span class="text-muted">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="py-3 text-end pe-4">
+                    {% if a.status == 'reported' %}
+                      <span class="badge bg-success bg-opacity-15 text-white px-2 py-1"><i class="fas fa-check-circle me-1"></i>Reported</span>
+                    {% elif a.status == 'running' %}
+                      <span class="badge bg-primary bg-opacity-15 text-white px-2 py-1"><i class="fas fa-spinner fa-spin me-1"></i>Running</span>
+                    {% elif a.status == 'completed' %}
+                      <span class="badge bg-info bg-opacity-15 text-white px-2 py-1"><i class="fas fa-cog me-1"></i>Processing</span>
+                    {% elif a.status == 'pending' %}
+                      <span class="badge bg-secondary bg-opacity-15 text-white px-2 py-1"><i class="fas fa-clock me-1"></i>Pending</span>
+                    {% elif a.status == 'recovered' %}
+                      <span class="badge bg-success bg-opacity-15 text-white px-2 py-1"><i class="fas fa-redo me-1"></i>Recovered</span>
+                    {% elif a.status == 'failed_analysis' or a.status == 'failed_processing' or a.status == 'failed_reporting' %}
+                      <span class="badge bg-danger bg-opacity-15 text-white px-2 py-1"><i class="fas fa-times-circle me-1"></i>Failed</span>
+                    {% else %}
+                      <span class="badge bg-dark text-white px-2 py-1">{{ a.status }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Analysis States -->
+  <div class="card bg-dark border-secondary shadow-sm mb-4">
+    <div class="card-header bg-transparent border-secondary py-3">
+      <div class="d-flex align-items-center">
+        <h5 class="mb-0 text-white"><i class="fas fa-tasks me-2 text-info"></i>Analysis States</h5>
+      </div>
     </div>
     <div class="card-body">
-        <div class="row text-center">
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Timeframe</h6>
-                <h3 class="text-white">{{days}} <small class="text-white-50">days</small></h3>
-            </div>
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Total Tasks</h6>
-                <h3 class="text-white">{% if statistics.total %}{{statistics.total}}{% else %}0{% endif %}</h3>
-            </div>
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Average per Day</h6>
-                <h3 class="text-white">{% if statistics.average %}{{statistics.average}}{% else %}0{% endif %}</h3>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Top Detections -->
-{% if statistics.detections %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-bug me-2 text-danger"></i>Top Detections</h5>
-    </div>
-    <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-center align-items-center">
-        {% for block in statistics.detections.items %}
-            {% if block.family %}
-            <a href="/analysis/search/detections:{{block.family}}/" class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
-                <span class="badge bg-danger me-2 p-2">{{block.total}}</span>
-                <span class="fw-bold" style="font-size: 1rem;">{{block.family}}</span>
-            </a>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+        {% for state, count in report.states_count.items %}
+          <div class="p-3 rounded border border-secondary d-flex align-items-center gap-3" style="background: rgba(255,255,255,0.03); flex: 1 1 calc(20% - 12px); min-width: 160px;">
+            {% if state == 'reported' %}
+              <i class="fas fa-check-circle text-success fs-4"></i>
+            {% elif state == 'recovered' %}
+              <i class="fas fa-redo text-success fs-4"></i>
+            {% elif state == 'running' %}
+              <i class="fas fa-spinner fa-spin text-primary fs-4"></i>
+            {% elif state == 'pending' %}
+              <i class="fas fa-clock text-secondary fs-4"></i>
+            {% elif state == 'completed' %}
+              <i class="fas fa-cog text-info fs-4"></i>
+            {% elif state == 'distributed' %}
+              <i class="fas fa-network-wired fs-4" style="color:#a78bfa;"></i>
+            {% elif state == 'failed_analysis' %}
+              <i class="fas fa-flask text-danger fs-4"></i>
+            {% elif state == 'failed_processing' %}
+              <i class="fas fa-microchip text-danger fs-4"></i>
+            {% elif state == 'failed_reporting' %}
+              <i class="fas fa-file-excel text-danger fs-4"></i>
+            {% else %}
+              <i class="fas fa-question-circle text-warning fs-4"></i>
             {% endif %}
+
+            <div class="flex-grow-1 min-w-0">
+              <div class="text-muted small text-truncate">{{ state|title }}</div>
+              <div class="fw-bold fs-5 text-white">{{ count }}</div>
+            </div>
+          </div>
         {% endfor %}
-        </div>
+      </div>
     </div>
-</div>
-{% endif %}
+  </div>
 
-<!-- Tasks per Day -->
-{% if statistics.tasks %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
+  <!-- Top Detections -->
+  {% if statistics.detections %}
+    <div class="card bg-dark shadow-sm border-secondary mb-4">
+      <div class="card-header border-secondary bg-transparent">
+        <h5 class="mb-0 text-white"><i class="fas fa-bug me-2 text-danger"></i>Top Detections</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-center align-items-center">
+          {% for block in statistics.detections %}
+            {% if block.family %}
+              <a href="/analysis/search/detections:{{ block.family }}/" class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
+                <span class="badge bg-danger me-2 p-2">{{ block.total }}</span>
+                <span class="fw-bold" style="font-size: 1rem;">{{ block.family }}</span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Top ASN -->
+  {% if statistics.asns %}
+    <div class="card bg-dark shadow-sm border-secondary mb-4">
+      <div class="card-header border-secondary bg-transparent">
+        <h5 class="mb-0 text-white"><i class="fas fa-network-wired me-2 text-warning"></i>Top ASNs</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-center align-items-center">
+          {% for block in statistics.asns %}
+            {% if block.asn %}
+              <a href="/analysis/search/asn:{{ block.asn }}" class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
+                <span class="badge bg-warning me-2 p-2" style="color: #000 !important;">{{ block.total }}</span>
+                <span class="font-weight-bold" style="font-size: 1rem;">{{ block.asn }}</span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Statistics Overview -->
+  <div class="card bg-dark shadow-sm border-secondary mb-4">
     <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-calendar-alt me-2 text-success"></i>Tasks per Day</h5>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-dark table-striped table-hover mb-0">
-            <thead>
-                <tr>
-                    <th class="border-top-0">Day</th>
-                    <th class="border-top-0 text-end">Added</th>
-                    <th class="border-top-0 text-end">Reported</th>
-                    <th class="border-top-0 text-end">Failed</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for day, info in statistics.tasks.items %}
-                <tr>
-                    <td class="text-light">{{day}}</td>
-                    <td class="text-end"><span class="badge bg-dark border border-secondary">{{info.added}}</span></td>
-                    <td class="text-end"><span class="badge bg-success">{{info.reported}}</span></td>
-                    <td class="text-end"><span class="badge bg-danger">{{info.failed}}</span></td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-<!-- Custom Stats -->
-{% if statistics.custom_statistics %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-cogs me-2 text-primary"></i>Custom Signatures</h5>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-dark table-striped table-hover mb-0">
-            <thead>
-                <tr>
-                    <th class="border-top-0">Name</th>
-                    <th class="border-top-0 text-end">Total Time</th>
-                    <th class="border-top-0 text-end">Runs</th>
-                    <th class="border-top-0 text-end">Extracted</th>
-                    <th class="border-top-0 text-end">Avg Time</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for name, time in statistics.custom_statistics.items %}
-                <tr>
-                    <td>{{name}}</td>
-                    <td class="text-end">{{time.total}}</td>
-                    <td class="text-end">{{time.runs}}</td>
-                    <td class="text-end">{{time.successful}}</td>
-                    <td class="text-end">{{time.average}}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-<!-- Module Performance -->
-<!-- <div class="row">
-    {% if statistics.processing %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-microchip me-2 text-info"></i>Processing</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.processing.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if statistics.signatures %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-file-signature me-2 text-warning"></i>Signatures</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.signatures.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if statistics.reporting %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-file-alt me-2 text-success"></i>Reporting</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.reporting.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-</div> -->
-
-<!-- Cluster Details -->
-{% if statistics.distributed_tasks %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-server me-2 text-primary"></i>Cluster Details</h5>
+      <h5 class="mb-0 text-white"><i class="fas fa-chart-line me-2 text-info"></i>Statistics Overview <small class="text-white-50">(Last {{ days }} days)</small></h5>
     </div>
     <div class="card-body">
+      <div class="row text-center">
+        <div class="col-md-4">
+          <h6 class="text-white-50 text-uppercase">Timeframe</h6>
+          <h3 class="text-white">{{ days }} <small class="text-white-50">days</small></h3>
+        </div>
+        <div class="col-md-4">
+          <h6 class="text-white-50 text-uppercase">Total Tasks</h6>
+          <h3 class="text-white">
+            {% if statistics.total %}
+              {{ statistics.total }}
+            {% else %}
+              0
+            {% endif %}
+          </h3>
+        </div>
+        <div class="col-md-4">
+          <h6 class="text-white-50 text-uppercase">Average per Day</h6>
+          <h3 class="text-white">
+            {% if statistics.average %}
+              {{ statistics.average }}
+            {% else %}
+              0
+            {% endif %}
+          </h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks per Day -->
+  {% if statistics.tasks %}
+    <div class="card bg-dark shadow-sm border-secondary mb-4 overflow-hidden">
+      <div class="card-header border-secondary bg-transparent">
+        <h5 class="mb-0 text-white"><i class="fas fa-calendar-alt me-2 text-success"></i>Tasks per Day</h5>
+      </div>
+      <div class="table-responsive rounded-bottom">
+        <table class="table table-dark table-striped table-hover mb-0 rounded-bottom">
+          <thead>
+            <tr>
+              <th class="border-top-0">Day</th>
+              <th class="border-top-0 text-end">Added</th>
+              <th class="border-top-0 text-end">Reported</th>
+              <th class="border-top-0 text-end">Failed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for day, info in statistics.tasks.items %}
+              <tr>
+                <td class="text-light">{{ day }}</td>
+                <td class="text-end">
+                  <span class="badge bg-dark border border-secondary">{{ info.added }}</span>
+                </td>
+                <td class="text-end">
+                  <span class="badge bg-success">{{ info.reported }}</span>
+                </td>
+                <td class="text-end">
+                  <span class="badge bg-danger">{{ info.failed }}</span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Custom Stats -->
+  {% if statistics.custom_statistics %}
+    <div class="card bg-dark shadow-sm border-secondary mb-4">
+      <div class="card-header border-secondary bg-transparent">
+        <h5 class="mb-0 text-white"><i class="fas fa-cogs me-2 text-primary"></i>Custom Signatures</h5>
+      </div>
+      <div class="table-responsive rounded-bottom">
+        <table class="table table-dark table-striped table-hover mb-0 rounded-bottom">
+          <thead>
+            <tr>
+              <th class="border-top-0">Name</th>
+              <th class="border-top-0 text-end">Total Time</th>
+              <th class="border-top-0 text-end">Runs</th>
+              <th class="border-top-0 text-end">Extracted</th>
+              <th class="border-top-0 text-end">Avg Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for name, time in statistics.custom_statistics.items %}
+              <tr>
+                <td>{{ name }}</td>
+                <td class="text-end">{{ time.total }}</td>
+                <td class="text-end">{{ time.runs }}</td>
+                <td class="text-end">{{ time.successful }}</td>
+                <td class="text-end">{{ time.average }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Cluster Details -->
+  {% if statistics.distributed_tasks %}
+    <div class="card bg-dark shadow-sm border-secondary mb-4">
+      <div class="card-header border-secondary bg-transparent">
+        <h5 class="mb-0 text-white"><i class="fas fa-server me-2 text-primary"></i>Cluster Details</h5>
+      </div>
+      <div class="card-body">
         <div class="row">
-        {% for day, block in statistics.distributed_tasks.items %}
+          {% for day, block in statistics.distributed_tasks.items %}
             <div class="col-md-3 mb-3">
-                <div class="card bg-dark text-white h-100 border-secondary">
-                    <div class="card-header fw-bold border-secondary">{{day}}</div>
-                    <ul class="list-group list-group-flush">
-                    {% for name, tasks in block.items %}
-                        <li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center border-secondary">
-                            {{name}}
-                            <span class="badge bg-primary rounded-pill">{{tasks}}</span>
-                        </li>
-                    {% endfor %}
-                    </ul>
-                </div>
+              <div class="card bg-dark text-white h-100 border-secondary">
+                <div class="card-header fw-bold border-secondary">{{ day }}</div>
+                <ul class="list-group list-group-flush">
+                  {% for name, tasks in block.items %}
+                    <li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center border-secondary">
+                      {{ name }}
+                      <span class="badge bg-primary rounded-pill">{{ tasks }}</span>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </div>
             </div>
-        {% endfor %}
+          {% endfor %}
         </div>
+      </div>
     </div>
-</div>
-{% endif %}
+  {% endif %}
 
-<!-- Analysis States Table -->
-<div class="row">
-    <div class="col-12 col-xl-8 mx-auto">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header border-0 py-3">
-                <div class="d-flex align-items-center">
-                    <div class="bg-success bg-opacity-10 p-2 rounded me-3">
-                        <i class="fas fa-chart-bar text-primary"></i>
-                    </div>
-                    <h5 class="mb-0 fw-semibold">Analysis States</h5>
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="bg-light">
-                            <tr>
-                                <th class="border-0 py-3 ps-4">State</th>
-                                <th class="border-0 py-3 text-end pe-4">Count</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        {% for state, count in report.states_count.items %}
-                            <tr>
-                                <td class="ps-4 py-3">
-                                    <span class="badge bg-success bg-opacity-10 text-primary rounded-pill px-3 py-2">{{state|title}}</span>
-                                </td>
-                                <td class="pe-4 py-3 text-end">
-                                    <span class="fw-bold text-primary fs-5">{{count}}</span>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+  <div class="row mt-2 mb-5">
+    <div class="col-12 text-center">
+      <hr class="border-secondary mb-4" style="opacity: 0.3;" />
+      <p class="text-muted mb-3">Looking for deeper insights and historical data?</p>
+      <a href="/statistics/" class="btn btn-outline-info btn-stat-link px-4 py-2 rounded-pill shadow-sm" style="border-width: 2px;"><i class="fas fa-chart-pie me-2"></i> View Full Statistics Report</a>
     </div>
-</div>
+  </div>
+  <!-- ========== STYLES for Dark Donut Disk Chart ========== -->
+  <style>
+    .btn-stat-link {
+      color: #63b3ed !important;
+      border-color: #63b3ed !important;
+      transition: all 0.3s ease-in-out !important;
+    }
+    
+    .btn-stat-link:hover,
+    .btn-stat-link:focus,
+    .btn-stat-link:active {
+      background-color: #63b3ed !important;
+      color: #0f1923 !important;
+      border-color: #63b3ed !important;
+      box-shadow: 0 0 15px rgba(99, 179, 237, 0.4) !important;
+      outline: none !important;
+    }
+    .fh-disk-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 0 4px;
+    }
+    .fh-disk-chart-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .fh-disk-labels {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-width: 130px;
+    }
+    .fh-disk-label-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .fh-disk-pct {
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .fh-disk-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+    .fh-disk-desc {
+      font-size: 10px;
+      color: #6b7fa3;
+      line-height: 1.5;
+      max-width: 130px;
+    }
+    .fh-pct-blue {
+      color: #6ec6f5;
+    }
+    .fh-pct-red {
+      color: #d81b60;
+    }
+    .fh-title-blue {
+      color: #5090c8;
+    }
+    .fh-title-red {
+      color: #d81b60;
+    }
+    .fh-disk-legend {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+    }
+    .fh-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #6b7fa3;
+    }
+    .fh-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    #fhDiskCanvas {
+      width: 260px;
+      height: 260px;
+    }
+  </style>
+  {% if machines %}
+    <script>
+(function () {
+  const machines = [
+    {% for id, label in machines %}
+      "{{ label|escapejs }}"{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  ];
 
+  const container = document.getElementById('machineTicker');
+  if (!container || machines.length === 0) return;
+
+  let current = 0;
+
+  function showNext() {
+    const old = container.querySelector('.machine-slide-item');
+    if (old) {
+      old.style.transition = 'transform 0.15s ease-in, filter 0.15s ease-in, opacity 0.15s ease-in';
+      old.style.transform = 'translateX(-110%)';
+      old.style.filter = 'blur(5px)';
+      old.style.opacity = '0';
+      setTimeout(() => old.remove(), 180);
+    }
+
+    const el = document.createElement('div');
+    el.className = 'machine-slide-item';
+    el.textContent = machines[current];
+    el.style.cssText = `
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      font-size: 0.62rem;
+      font-weight: 600;
+      color: rgba(129,140,248,0.85);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 18px;
+      height: 18px;
+      transform: translateX(110%);
+      filter: blur(5px);
+      opacity: 0;
+      transition: none;
+    `;
+    container.appendChild(el);
+
+    el.getBoundingClientRect();
+    el.style.transition = 'transform 0.2s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.2s ease-out, opacity 0.15s ease-out';
+    el.style.transform = 'translateX(0)';
+    el.style.filter = 'blur(0px)';
+    el.style.opacity = '1';
+
+    current = (current + 1) % machines.length;
+  }
+
+  showNext();
+  setInterval(showNext, 2500);
+})();
+</script>
+  {% endif %}
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    ;(function () {
+      const canvas = document.getElementById('fhDiskCanvas')
+      const ctx = canvas.getContext('2d')
+    
+      const CSS_SIZE = 260
+      const CHART_R = 108
+      const HOVER_MAX = 1.08
+    
+      const DPR = window.devicePixelRatio || 1
+      canvas.width = CSS_SIZE * DPR
+      canvas.height = CSS_SIZE * DPR
+      canvas.style.width = CSS_SIZE + 'px'
+      canvas.style.height = CSS_SIZE + 'px'
+      ctx.scale(DPR, DPR)
+    
+      const cx = CSS_SIZE / 2,
+        cy = CSS_SIZE / 2
+    
+      let hoverScale = 1.0
+      let animFrame = null
+      let currentUsed = 0
+    
+      function rad(d) {
+        return (d * Math.PI) / 180
+      }
+    
+      function arc(r, s, e, color, lw) {
+        ctx.beginPath()
+        ctx.arc(cx, cy, r, rad(s), rad(e))
+        ctx.strokeStyle = color
+        ctx.lineWidth = lw
+        ctx.lineCap = 'butt'
+        ctx.stroke()
+      }
+    
+      function gradArc(r, s, e, c1, c2, lw) {
+        if (e - s < 1) return
+        const steps = Math.max(60, Math.floor(e - s))
+        const step = (e - s) / steps
+        for (let i = 0; i < steps; i++) {
+          const t = i / steps
+          const ri = Math.round(c1[0] + (c2[0] - c1[0]) * t)
+          const gi = Math.round(c1[1] + (c2[1] - c1[1]) * t)
+          const bi = Math.round(c1[2] + (c2[2] - c1[2]) * t)
+          ctx.beginPath()
+          ctx.arc(cx, cy, r, rad(s + step * i - 0.3), rad(s + step * (i + 1) + 0.3))
+          ctx.strokeStyle = `rgb(${ri},${gi},${bi})`
+          ctx.lineWidth = lw
+          ctx.lineCap = 'butt'
+          ctx.stroke()
+        }
+      }
+    
+      function ticks(r, count, len, color, lw) {
+        for (let i = 0; i < count; i++) {
+          const a = rad((360 / count) * i - 90)
+          ctx.beginPath()
+          ctx.moveTo(cx + (r - len) * Math.cos(a), cy + (r - len) * Math.sin(a))
+          ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
+          ctx.strokeStyle = color
+          ctx.lineWidth = lw
+          ctx.stroke()
+        }
+      }
+    
+      function getCardBg() {
+        const card = canvas.closest('.card')
+        if (!card) return '#ffffff'
+        const bg = window.getComputedStyle(card).backgroundColor
+        const m = bg.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/)
+        if (!m) return '#ffffff'
+        return '#' + [m[1], m[2], m[3]].map((x) => parseInt(x).toString(16).padStart(2, '0')).join('')
+      }
+    
+      function renderFrame(used, scale) {
+        ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE)
+    
+        const START = -225,
+          TOTAL = 270,
+          GAP = 6
+        const usedDeg = (used / 100) * TOTAL
+        const freeDeg = TOTAL - usedDeg
+        const bg = getCardBg()
+    
+        const BASE = (CSS_SIZE / 280) * 0.88
+        const S = BASE * scale
+        const R = (v) => v * S
+    
+        ticks(R(138), 56, R(7), 'rgba(60,90,160,0.45)', 1.2)
+    
+        if (usedDeg > 2) arc(R(127), START, START + usedDeg, 'rgba(110,180,245,0.2)', 3)
+        if (freeDeg > 2) arc(R(127), START + usedDeg + GAP, START + TOTAL, 'rgba(240,100,130,0.25)', 3)
+    
+        arc(R(110), START - 2, START + TOTAL + 2, bg, 24)
+    
+        if (usedDeg > 2) gradArc(R(110), START, START + usedDeg, [40, 100, 220], [110, 200, 255], 22)
+        if (freeDeg > 2) gradArc(R(110), START + usedDeg + GAP, START + TOTAL, [200, 50, 120], [255, 100, 90], 22)
+    
+        arc(R(88), START - 3, START + TOTAL + 3, bg, 6)
+        if (usedDeg > 2) gradArc(R(88), START, START + usedDeg, [20, 60, 180], [80, 160, 240], 10)
+        if (freeDeg > 2) gradArc(R(88), START + usedDeg + GAP, START + TOTAL, [160, 30, 100], [230, 80, 80], 10)
+    
+        ctx.beginPath()
+        ctx.arc(cx, cy, R(74), 0, Math.PI * 2)
+        ctx.fillStyle = bg
+        ctx.fill()
+    
+        arc(R(72), START, START + TOTAL, 'rgba(60,90,160,0.35)', 1.5)
+        arc(R(66), START, START + TOTAL, 'rgba(60,90,160,0.15)', 1)
+    
+        ctx.beginPath()
+        ctx.arc(cx, cy, R(58), 0, Math.PI * 2)
+        ctx.fillStyle = bg
+        ctx.fill()
+        arc(R(58), START, START + TOTAL, 'rgba(80,120,200,0.3)', 1)
+    
+        const BASE_ONLY = (CSS_SIZE / 280) * 0.88
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.font = `bold ${Math.round(BASE_ONLY * 28)}px sans-serif`
+        ctx.fillStyle = '#d0e8ff'
+        ctx.fillText(used + '%', cx, cy - BASE_ONLY * 4)
+        ctx.font = `${Math.round(BASE_ONLY * 10)}px sans-serif`
+        ctx.fillStyle = '#4a6090'
+        ctx.fillText('disk used', cx, cy + BASE_ONLY * 16)
+      }
+    
+      // Smooth scale animation
+      function animateTo(targetScale) {
+        if (animFrame) cancelAnimationFrame(animFrame)
+        function step() {
+          const diff = targetScale - hoverScale
+          if (Math.abs(diff) < 0.001) {
+            hoverScale = targetScale
+            renderFrame(currentUsed, hoverScale)
+            return
+          }
+          hoverScale += diff * 0.15
+          renderFrame(currentUsed, hoverScale)
+          animFrame = requestAnimationFrame(step)
+        }
+        step()
+      }
+    
+      window.fhRenderDiskDonut = function (used) {
+        currentUsed = used
+        renderFrame(used, hoverScale)
+      }
+    
+      canvas.addEventListener('mouseenter', function () {
+        animateTo(HOVER_MAX)
+      })
+      canvas.addEventListener('mouseleave', function () {
+        animateTo(1.0)
+      })
+    
+      window.fhRenderDiskDonut(0)
+    })()
+    const cpuChart = new Chart(document.getElementById('fhCpuChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'CPU %',
+            data: [],
+            borderColor: '#22c55e',
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        animation: false,
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            grid: {
+              color: 'rgba(255,255,255,0.05)',
+              lineWidth: 1
+            },
+            ticks: {
+              color: '#6b7fa3'
+            }
+          },
+          x: {
+            grid: {
+              color: 'rgba(255,255,255,0.05)',
+              lineWidth: 1
+            },
+            ticks: {
+              color: '#6b7fa3'
+            }
+          }
+        }
+      }
+    })
+    
+    const memChart = new Chart(document.getElementById('fhMemChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Memory %',
+            data: [],
+            borderColor: '#38bdf8',
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        animation: false,
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            grid: {
+              color: 'rgba(255,255,255,0.05)',
+              lineWidth: 1
+            },
+            ticks: {
+              color: '#6b7fa3'
+            }
+          },
+          x: {
+            grid: {
+              color: 'rgba(255,255,255,0.05)',
+              lineWidth: 1
+            },
+            ticks: {
+              color: '#6b7fa3'
+            }
+          }
+        }
+      }
+    })
+    
+    /* ── Threshold color helper ───────────────────────────── */
+    function getThresholdColor(val) {
+      if (val <= 33) return { line: '#30b22d', rgb: '48,178,45' }
+      if (val <= 66) return { line: '#fed71f', rgb: '254,215,31' }
+      return { line: '#ed6b60', rgb: '237,107,96' }
+    }
+    
+    /* ── Card style updater ───────────────────────────────── */
+    function updateDashCard(cardId, labelId, valueId, val) {
+      const c = getThresholdColor(val)
+      const card = document.getElementById(cardId)
+      const label = document.getElementById(labelId)
+      const value = document.getElementById(valueId)
+      if (card) {
+        card.style.border = `1px solid rgba(${c.rgb},0.25)`
+        card.style.borderLeft = `3px solid ${c.line}`
+        card.style.background = `rgba(${c.rgb},0.03)`
+      }
+      if (label) label.style.color = c.line
+      if (value) value.style.color = c.line
+    }
+    
+    /* ── Sparkline setup ──────────────────────────────────── */
+    const DASH_BUF = 20
+    const dashCpuBuf = new Array(DASH_BUF).fill(0)
+    const dashMemBuf = new Array(DASH_BUF).fill(0)
+    const dashDiskBuf = new Array(DASH_BUF).fill(0)
+    
+    function makeDashSparkline(canvasId, buf, color) {
+      const canvas = document.getElementById(canvasId)
+      if (!canvas) return null
+      return new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: buf.map((_, i) => i),
+          datasets: [
+            {
+              data: [...buf],
+              borderColor: color,
+              backgroundColor: color.replace('rgb(', 'rgba(').replace(')', ',0.10)'),
+              borderWidth: 1.8,
+              fill: true,
+              tension: 0.42,
+              pointRadius: 0,
+              pointHoverRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: { display: false },
+            y: { display: false, min: 0, max: 100 }
+          }
+        }
+      })
+    }
+    
+    function refreshDashSparkline(chart, buf, val) {
+      if (!chart) return
+      buf.push(parseFloat(val) || 0)
+      if (buf.length > DASH_BUF) buf.shift()
+      const c = getThresholdColor(buf[buf.length - 1])
+      chart.data.datasets[0].data = [...buf]
+      chart.data.labels = buf.map((_, i) => i)
+      chart.data.datasets[0].borderColor = c.line
+      chart.data.datasets[0].backgroundColor = `rgba(${c.rgb},0.10)`
+      chart.update('none')
+    }
+    
+    /* Init sparklines setelah DOM ready */
+    let dashCpuSpark = null,
+      dashMemSpark = null,
+      dashDiskSpark = null
+    document.addEventListener('DOMContentLoaded', () => {
+      dashCpuSpark = makeDashSparkline('dashCpuSpark', dashCpuBuf, 'rgb(48,178,45)')
+      dashMemSpark = makeDashSparkline('dashMemSpark', dashMemBuf, 'rgb(48,178,45)')
+      dashDiskSpark = makeDashSparkline('dashDiskSpark', dashDiskBuf, 'rgb(48,178,45)')
+    })
+    
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/apiv2/cuckoo/status/')
+        const data = await res.json()
+        if (data.error || !data.data) {
+          console.error('Dashboard status fetch failed', data.error_value || data)
+          return
+        }
+    
+        const cpu = data.data.server.cpu.cpu_usage
+        const ramPercent = data.data.server.ram.ram_percent_used
+        const diskUsed = parseFloat(data.data.server.storage.used_by)
+        const machines = data.data.machines.available
+    
+        const internet = data.data.server.services.internet
+        const cape = data.data.server.services.cape
+        const nginx = data.data.server.services.nginx
+        const suricata = data.data.server.services.suricata
+        const misp = data.data.server.services.misp
+        const mobsf = data.data.server.services.mobsf
+    
+        // Header value badges
+        document.getElementById('fhCpuValue').innerText = cpu + '%'
+        document.getElementById('fhMemValue').innerText = ramPercent + '%'
+        document.getElementById('fhDiskValue').innerText = diskUsed + '%'
+    
+        updateDashCard('dashCpuCard', 'dashCpuLabel', 'fhCpuValue', cpu)
+        updateDashCard('dashMemCard', 'dashMemLabel', 'fhMemValue', ramPercent)
+        updateDashCard('dashDiskCard', 'dashDiskLabel', 'fhDiskValue', diskUsed)
+    
+        refreshDashSparkline(dashCpuSpark, dashCpuBuf, cpu)
+        refreshDashSparkline(dashMemSpark, dashMemBuf, ramPercent)
+        refreshDashSparkline(dashDiskSpark, dashDiskBuf, diskUsed)
+    
+        document.getElementById('fhMachineValue').innerText = machines
+    
+        function setStatus(id, active, yes, no) {
+          const el = document.getElementById(id)
+          el.innerText = active ? yes : no
+          el.className = ''
+          el.classList.add(active ? 'fh-status-up' : 'fh-status-down')
+        }
+        setStatus('internetStatus', internet === 'connected', 'Connected', 'Disconnected')
+        setStatus('capeStatus', cape === 'active', 'Running', 'Stopped')
+        setStatus('nginxStatus', nginx === 'active', 'Running', 'Stopped')
+        setStatus('suricataStatus', suricata === 'active', 'Running', 'Stopped')
+        setStatus('mispStatus', misp === 'active', 'Running', 'Stopped')
+        setStatus('mobsfStatus', mobsf === 'active', 'Running', 'Stopped')
+    
+        // CPU trend chart
+        cpuChart.data.labels.push('')
+        cpuChart.data.datasets[0].data.push(cpu)
+        if (cpuChart.data.labels.length > 20) {
+          cpuChart.data.labels.shift()
+          cpuChart.data.datasets[0].data.shift()
+        }
+        cpuChart.update()
+    
+        // Memory trend chart
+        memChart.data.labels.push('')
+        memChart.data.datasets[0].data.push(ramPercent)
+        if (memChart.data.labels.length > 20) {
+          memChart.data.labels.shift()
+          memChart.data.datasets[0].data.shift()
+        }
+        memChart.update()
+    
+        // ── Dark Donut Disk Chart  ──
+        window.fhRenderDiskDonut(diskUsed)
+        document.getElementById('fhDiskUsedLabel').textContent = diskUsed + '%'
+        document.getElementById('fhDiskFreeLabel').textContent = 100 - diskUsed + '%'
+      } catch (error) {
+        console.error('Failed to load dashboard status', error)
+      }
+    }
+    
+    setInterval(loadDashboard, 2000)
+    loadDashboard()
+  </script>
 {% endblock %}

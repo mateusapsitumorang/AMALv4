@@ -1,14 +1,74 @@
 {% extends 'base.html' %}
 {% load crispy_forms_tags %}
-{% block title %}Log Out{% endblock %}
+{% block title %}
+  Log Out · AMALV4 Sandbox
+{% endblock %}
 {% block content %}
-<div style="margin-top:6%" class="container">
-    <h1>Log Out</h1>
-    <p>Are you sure you want to log out?</p>
-    <form method="post" action="{% url 'account_logout' %}">
-        {% csrf_token %}
-        {{ form|crispy }}
-        <button class="btn btn-danger" type="submit">Log Out</button>
-    </form>
-</div>
-{% endblock content %}
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      background-image: url('/static/img/Login_Backround.png') !important;
+      background-size: cover !important;
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      background-attachment: fixed !important;
+      background-color: #0f1117 !important;
+    }
+
+    .card {
+      background: rgba(15, 17, 23, 0.5) !important;
+      backdrop-filter: blur(6px) !important;
+      -webkit-backdrop-filter: blur(6px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    }
+  </style>
+
+  <div class="m-0 start-0 top-0 d-flex w-100 justify-content-center align-items-center flex-column position-absolute"
+       style="min-height: 100vh;">
+    <div class="card shadow-lg border-0" style="max-width:420px; width:100%; border-radius:15px;">
+      <div class="card-body p-4">
+
+        <!-- Logo & Title -->
+        <div class="d-flex align-items-center justify-content-center gap-2 mb-4">
+          <img src="{{ STATIC_URL }}img/BSSN.png" width="50" height="50" alt="Logo"
+               style="object-fit: contain; flex-shrink: 0;" />
+          <h3 class="mb-0 fw-semibold" style="line-height: 1; font-size: 2rem;">
+            Sign Out
+          </h3>
+        </div>
+
+        <!-- Divider -->
+        <hr style="border-color: rgba(255,255,255,0.08);" />
+
+        <!-- Message -->
+        <p class="text-center text-muted small mb-4">
+          Are you sure you want to log out from <strong style="color: var(--foreground);">AMAL V4</strong>?
+        </p>
+
+        <!-- Form -->
+        <form method="post" action="{% url 'account_logout' %}">
+          {% csrf_token %}
+          {{ form|crispy }}
+          <button class="btn btn-danger w-100" type="submit">
+            <i class="fas fa-sign-out-alt me-2"></i> Log Out
+          </button>
+        </form>
+
+        <!-- Back link -->
+        <div class="text-center mt-3">
+          <a href="/" class="small" style="color: var(--secondary);">
+            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+{% endblock %}

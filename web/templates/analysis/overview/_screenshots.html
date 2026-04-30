@@ -1,27 +1,305 @@
 {% if analysis.shots %}
 <section id="screenshots" class="mb-4">
     <div class="card bg-dark border-secondary">
-        <div class="card-header border-secondary">
-            <h5 class="mb-0 text-white"><i class="fas fa-images me-2 text-info"></i> Screenshots</h5>
+        <div class="card-header border-secondary d-flex align-items-center justify-content-between">
+            <h5 class="mb-0 text-white">
+                <i class="fas fa-images me-2 text-info"></i> Screenshots
+            </h5>
+            <span class="badge bg-secondary text-white" style="font-size:12px;">
+                <span id="shot-current">1</span>&nbsp;/&nbsp;{{ analysis.shots|length }}
+            </span>
         </div>
-        <div class="card-body">
-            {% if analysis.shots %}
-                <div class="d-flex flex-wrap justify-content-center">
-                {% for shot in analysis.shots %}
-                    <div class="m-2">
-                        <a data-lightbox="screenshot" href="{% url "file_nl" "screenshot" analysis.info.id shot %}" data-title="Screenshot {{shot}}">
-                            <img class="img-thumbnail bg-dark border-dark" src="{% url "file_nl" "screenshot" analysis.info.id shot %}" style="height: 150px; object-fit: cover;" alt="Screenshot {{shot}}" />
-                        </a>
-                    </div>
-                {% endfor %}
+
+        <div id="shot-wrapper" class="card-body p-0 position-relative"
+             style="height:400px; overflow:hidden; background:#000; border-radius:0 0 4px 4px;">
+
+            <!-- Blurred background -->
+            <div id="shot-blur-bg" style="
+                position: absolute; inset: -20px;
+                background-size: cover; background-position: center;
+                filter: blur(24px) brightness(0.35) saturate(1.4);
+                z-index: 1;
+            "></div>
+
+            <!-- Slides — all in ONE lightbox group -->
+            {% for shot in analysis.shots %}
+            <div class="shot-slide"
+                 data-src="{% url 'file_nl' 'screenshot' analysis.info.id shot %}"
+                 style="
+                    position: absolute; inset: 0;
+                    display: flex; align-items: center; justify-content: center;
+                    opacity: 0; transition: opacity 0.55s ease;
+                    pointer-events: none; z-index: 2;
+                 ">
+                <a class="shot-anchor"
+                   data-lightbox="screenshots"
+                   href="{% url 'file_nl' 'screenshot' analysis.info.id shot %}"
+                   style="display:block; z-index:3; cursor:zoom-in;">
+                    <img src="{% url 'file_nl' 'screenshot' analysis.info.id shot %}"
+                         alt="Screenshot {{ shot }}"
+                         style="max-height:360px; max-width:100%; object-fit:contain;
+                                border-radius:4px; box-shadow:0 4px 32px rgba(0,0,0,0.7);" />
+                </a>
+            </div>
+            {% endfor %}
+
+            <!-- Prev button -->
+            <button id="shot-prev" style="
+                position:absolute; left:12px; top:50%; transform:translateY(-50%);
+                background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.15);
+                color:#fff; border-radius:50%; width:38px; height:38px;
+                cursor:pointer; z-index:10; font-size:20px;
+                display:flex; align-items:center; justify-content:center;">&#8249;</button>
+
+            <!-- Next button -->
+            <button id="shot-next" style="
+                position:absolute; right:12px; top:50%; transform:translateY(-50%);
+                background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.15);
+                color:#fff; border-radius:50%; width:38px; height:38px;
+                cursor:pointer; z-index:10; font-size:20px;
+                display:flex; align-items:center; justify-content:center;">&#8250;</button>
+
+            <!-- Bottom controls (pointer-events:none so gradient won't block image clicks) -->
+            <div id="shot-controls" style="
+                position:absolute; bottom:0; left:0; right:0; z-index:10;
+                background:linear-gradient(transparent, rgba(0,0,0,0.85));
+                padding:32px 16px 10px;
+                display:flex; flex-direction:column; gap:6px;
+                pointer-events:none; opacity:0; transition:opacity 0.3s;
+            ">
+                <div id="shot-track" style="
+                    width:100%; height:3px; background:rgba(255,255,255,0.2);
+                    border-radius:2px; cursor:pointer; pointer-events:auto;">
+                    <div id="shot-bar" style="
+                        height:100%; width:0%; background:#0dcaf0; border-radius:2px;"></div>
                 </div>
-            {% else %}
-                <div class="text-center text-white-50 py-4">
-                    <i class="fas fa-camera-retro fa-2x mb-2"></i>
-                    <p>No screenshots available.</p>
+                <div style="display:flex; align-items:center; justify-content:space-between; pointer-events:auto;">
+                    <button id="shot-pp" style="
+                        background:transparent; border:none; color:#0dcaf0;
+                        cursor:pointer; font-size:13px; padding:2px 6px; border-radius:4px;
+                        display:flex; align-items:center; gap:5px;">
+                        <span id="shot-pp-icon">⏸</span>
+                        <span id="shot-pp-label">Pause</span>
+                    </button>
+                    <span style="color:rgba(255,255,255,0.4); font-size:11px;">Click image to zoom</span>
                 </div>
-            {% endif %}
+            </div>
         </div>
     </div>
 </section>
+
+<script>
+(function () {
+    var slides    = document.querySelectorAll('.shot-slide');
+    var blurBg    = document.getElementById('shot-blur-bg');
+    var counter   = document.getElementById('shot-current');
+    var bar       = document.getElementById('shot-bar');
+    var track     = document.getElementById('shot-track');
+    var controls  = document.getElementById('shot-controls');
+    var wrapper   = document.getElementById('shot-wrapper');
+    var ppIcon    = document.getElementById('shot-pp-icon');
+    var ppLabel   = document.getElementById('shot-pp-label');
+
+    var total      = slides.length;
+    var current    = 0;
+    var playing    = false;
+    var elapsed    = 0;
+    var lastTick   = null;
+    var slideTimer = null;
+    var barTicker  = null;
+    var hideTimer  = null;
+    var lbOpen     = false;
+    var srcObserver = null;
+    var INTERVAL   = 3500;
+
+    // Tracks whether autoplay was running before lightbox opened,
+    var wasPlayingBeforeLb = false;
+
+    /* ══════ Pathname → slide index lookup ══════ */
+    var pathIndex = {};
+    slides.forEach(function (slide, i) {
+        try {
+            pathIndex[new URL(slide.getAttribute('data-src'), location.origin).pathname] = i;
+        } catch (e) {
+            pathIndex[slide.getAttribute('data-src')] = i;
+        }
+    });
+
+    function srcToIndex(absUrl) {
+        try { return pathIndex[new URL(absUrl).pathname]; }
+        catch (e) { return undefined; }
+    }
+
+    /* ══════ Controls auto-hide ══════ */
+    function showCtrls() {
+        controls.style.opacity = '1';
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () { controls.style.opacity = '0'; }, 2200);
+    }
+    wrapper.addEventListener('mouseenter', showCtrls);
+    wrapper.addEventListener('mousemove',  showCtrls);
+    wrapper.addEventListener('mouseleave', function () {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () { controls.style.opacity = '0'; }, 800);
+    });
+
+    /* ══════ Elapsed ms into current slide ══════ */
+    function getMs() {
+        if (!playing || !lastTick) return elapsed;
+        return Math.min(elapsed + (Date.now() - lastTick), INTERVAL);
+    }
+
+    /* ══════ Core: move carousel to index ══════ */
+    function goTo(idx) {
+        slides[current].style.opacity = '0';
+        slides[current].style.pointerEvents = 'none';
+
+        current = (idx + total) % total;
+
+        slides[current].style.opacity = '1';
+        slides[current].style.pointerEvents = 'auto';
+
+        var src = slides[current].getAttribute('data-src');
+        blurBg.style.backgroundImage = 'url(' + src + ')';
+        counter.textContent = current + 1;
+
+        elapsed  = 0;
+        lastTick = playing ? Date.now() : null;
+
+        startBarTicker();
+    }
+
+    /* ══════ Progress bar ══════ */
+    function startBarTicker() {
+        if (barTicker) { clearInterval(barTicker); barTicker = null; }
+        if (!playing) return;
+        barTicker = setInterval(function () {
+            bar.style.width = Math.min((getMs() / INTERVAL) * 100, 100) + '%';
+        }, 50);
+    }
+
+    /* ══════ Autoplay scheduler ══════ */
+    function scheduleNext() {
+        if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+        if (!playing) return;
+        var remaining = Math.max(INTERVAL - getMs(), 50);
+        slideTimer = setTimeout(function () {
+            goTo(current + 1);
+            scheduleNext();
+        }, remaining);
+    }
+
+    /* ══════ Play / Pause ══════ */
+    function startPlay() {
+        playing  = true;
+        lastTick = Date.now();
+        ppIcon.textContent  = '⏸';
+        ppLabel.textContent = 'Pause';
+        startBarTicker();
+        scheduleNext();
+        showCtrls();
+    }
+
+    function stopPlay() {
+        elapsed  = getMs();
+        lastTick = null;
+        playing  = false;
+        if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+        if (barTicker)  { clearInterval(barTicker);  barTicker = null; }
+        ppIcon.textContent  = '▶';
+        ppLabel.textContent = 'Play';
+        showCtrls();
+    }
+
+    /* ══════ Lightbox → Carousel sync (one-way only) ══════ */
+      
+    function attachSrcObserver() {
+        var lbImg = document.querySelector('#lightbox .lb-image');
+        if (!lbImg) { setTimeout(attachSrcObserver, 200); return; }
+
+        if (srcObserver) srcObserver.disconnect();
+
+        // Watch lb-number for ANY text change lightbox2 writes,
+        // including the very first render after image load.
+        // Guard: only replace if it still starts with "Image" → no loop.
+        var lbNum = document.querySelector('#lightbox .lb-number');
+        if (lbNum) {
+            var numObserver = new MutationObserver(function () {
+                if (lbNum.textContent.indexOf('Image') === 0) {
+                    lbNum.textContent = lbNum.textContent.replace(/^Image\b/, 'Screenshot');
+                }
+            });
+            numObserver.observe(lbNum, { childList: true, characterData: true, subtree: true });
+        }
+        srcObserver = new MutationObserver(function () {
+            var idx = srcToIndex(lbImg.src);
+            if (idx === undefined || idx === current) return;
+
+            slides[current].style.opacity = '0';
+            slides[current].style.pointerEvents = 'none';
+            current = idx;
+            slides[current].style.opacity = '1';
+            slides[current].style.pointerEvents = 'auto';
+            blurBg.style.backgroundImage = 'url(' + slides[current].getAttribute('data-src') + ')';
+            counter.textContent = current + 1;
+            elapsed = 0;
+
+            // Rename "Image X of Y" → "Screenshot X of Y"
+            var lbNum = document.querySelector('#lightbox .lb-number');
+            if (lbNum) lbNum.textContent = lbNum.textContent.replace(/^Image\b/, 'Screenshot');
+        });
+        srcObserver.observe(lbImg, { attributes: true, attributeFilter: ['src'] });
+    }
+
+    /* ══════ Watch body for lightbox open / close ══════ */
+    new MutationObserver(function (muts) {
+        muts.forEach(function (m) {
+            m.addedNodes.forEach(function (n) {
+                if (n.id === 'lightbox') {
+                    lbOpen = true;
+                    wasPlayingBeforeLb = playing;
+                    if (playing) stopPlay();  
+                    attachSrcObserver();
+                }
+            });
+            m.removedNodes.forEach(function (n) {
+                if (n.id === 'lightbox') {
+                    lbOpen = false;
+                    if (srcObserver) { srcObserver.disconnect(); srcObserver = null; }
+                    // Resume autoplay from wherever user left off in lightbox
+                    if (wasPlayingBeforeLb) startPlay();
+                }
+            });
+        });
+    }).observe(document.body, { childList: true });
+
+    /* ══════ Pause when image is clicked (zoom opens) ══════ */
+    slides.forEach(function (slide) {
+        slide.querySelector('.shot-anchor').addEventListener('click', function () {
+            if (playing) stopPlay();
+        });
+    });
+
+    /* ══════ Button listeners ══════ */
+    document.getElementById('shot-prev').addEventListener('click', function () {
+        var was = playing; stopPlay(); goTo(current - 1); if (was) startPlay();
+    });
+    document.getElementById('shot-next').addEventListener('click', function () {
+        var was = playing; stopPlay(); goTo(current + 1); if (was) startPlay();
+    });
+    document.getElementById('shot-pp').addEventListener('click', function () {
+        playing ? stopPlay() : startPlay();
+    });
+    track.addEventListener('click', function (e) {
+        var pct = (e.clientX - track.getBoundingClientRect().left) / track.offsetWidth;
+        var idx = Math.round(pct * (total - 1));
+        var was = playing; stopPlay(); goTo(idx); if (was) startPlay();
+    });
+
+    /* ══════ Init ══════ */
+    if (window.lightbox) lightbox.option({ albumLabel: 'Screenshot %1 of %2' });
+    goTo(0);
+    startPlay();
+})();
+</script>
 {% endif %}

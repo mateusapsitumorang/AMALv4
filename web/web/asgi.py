@@ -16,7 +16,7 @@ sys.path.append(webdir) # Add web root
 os.chdir(webdir) # Change working directory
 
 # --- 2. DJANGO SETUP ---
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web.guac_settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web.settings")
 
 # Initialize Django ASGI application early to ensure the AppRegistry
 # is populated before importing code that may import ORM models.

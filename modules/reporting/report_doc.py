@@ -12,6 +12,8 @@ from contextlib import suppress
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.path_utils import path_exists
+from elasticsearch.helpers import parallel_bulk
+from dev_utils.elasticsearchdb import get_daily_calls_index
 
 log = logging.getLogger(__name__)
 repconf = Config("reporting")
