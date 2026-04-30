@@ -1,5 +1,26 @@
 {% extends "base.html" %}
+{% block title %}Pending Tasks · AMALV4 Sandbox{% endblock %}
+{% block page_title %}Pending Tasks{% endblock %}
 {% block content %}
+
+<style>
+.btn-delete-task {
+    color: #E74C3C !important;
+}
+
+.btn-delete-task i {
+    color: #E74C3C !important;
+}
+
+.btn-delete-task:hover {
+    color: white !important;
+}
+
+.btn-delete-task:hover i {
+    color: white !important;
+}
+</style>
+
 <div class="card bg-dark shadow-sm border-secondary mb-4">
     <div class="card-header border-secondary bg-transparent d-flex justify-content-between align-items-center">
         <h5 class="mb-0 text-white"><i class="fas fa-clock me-2 text-warning"></i>Pending Tasks</h5>
@@ -42,7 +63,9 @@
                         </div>
                     </td>
                     <td class="text-center">
-                        <a href="/apiv2/tasks/delete/{{task.id}}/pending" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Delete Task">
+                       <a href="/apiv2/tasks/delete/{{task.id}}/pending" 
+                        class="btn btn-sm btn-outline-danger btn-delete-task" 
+                        data-bs-toggle="tooltip" title="Delete Task">
                             <i class="fas fa-trash-alt"></i>
                         </a>
                     </td>

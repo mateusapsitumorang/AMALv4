@@ -1,0 +1,15 @@
+[Unit]
+Description=ADB Server for MobSF
+After=network.target
+
+[Service]
+Type=simple
+User=cape
+Environment=ANDROID_HOME=/opt/android-sdk
+Environment=PATH=/opt/android-sdk/platform-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/android-sdk/platform-tools/adb -a -P 5037 nodaemon server
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

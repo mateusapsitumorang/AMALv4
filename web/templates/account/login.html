@@ -1,18 +1,98 @@
 {% extends 'base.html' %}
 {% load i18n %}
+{% load socialaccount %}
 {% load crispy_forms_tags %}
-{% block title %}Log In{% endblock title %}
+{% block title %}
+Log In · AMALV4 Sandbox
+{% endblock %}
 {% block content %}
-<div style="margin-top:6%" class="container">
-    <h2>{% trans "Sign In" %}</h2>
-    <p>
-        {% blocktrans %}If you have not created an account yet, then please <a style="color:red" href="{{signup_url}}">Sign up</a> first.
-        {% endblocktrans %}
-    </p>
-    <form method="post" autocomplete="off">
-    {% csrf_token %}
-    {{ form|crispy }}
-    <button class="btn btn-secondary" type="submit">Login</button> <a style="color:red" href="/accounts/password/reset/">{% trans "Forgot password?" %}</a>
-    </form>
+<style>
+  /* Background  */
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  body {
+    background-image: url('/static/img/Login_Backround.png') !important;
+    background-size: cover !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-attachment: fixed !important;
+    background-color: #0f1117 !important;
+  }
+
+  /* Card blur */
+  .card {
+    background: rgba(15, 17, 23, 0.5) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  /* Gap antar field form */
+  .mb-3,
+  .form-group {
+    margin-bottom: 1.2rem !important;
+  }
+
+  /* label */
+  label {
+    margin-bottom: 0.4rem !important;
+    font-size: 0.875rem;
+    color: var(--secondary) !important;
+  }
+
+  /* Input height */
+  .form-control {
+    padding: 0.6rem 0.9rem !important;
+    font-size: 0.9rem !important;
+  }
+</style>
+<div class="m-0 start-0 top-0 d-flex w-100 justify-content-center align-items-center flex-column position-absolute"
+  style="min-height: 100vh;">
+  <div class="card shadow-lg border-0" style="max-width:420px; width:100%; border-radius:15px;">
+    <div class="card-body p-4">
+      <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+        <img src="{{ STATIC_URL }}img/BSSN.png" width="70" height="70" alt="Logo" style="object-fit: contain;" />
+        <h3 class="mb-0">{% trans 'Sign In to AMAL 4' %}</h3>
+      </div>
+
+      <p class="text-center text-muted small">
+        {% blocktrans %}If you don't have an account,
+        <a href="{{ signup_url }}" style="color:#dc3545;">Sign up</a>
+        first.{% endblocktrans %}
+      </p>
+
+      <form method="post" autocomplete="off">
+        {% csrf_token %}
+        {{ form|crispy }}
+
+        <button class="btn btn-dark w-100 mt-2" type="submit">Login</button>
+      </form>
+
+      {% if settings.WEB_OAUTH.github or settings.WEB_OAUTH.google %}
+      <div class="text-center mt-2">
+        <p class="text-muted small mb-2">Or login with</p>
+
+        <div class="d-flex justify-content-center gap-3">
+          {% comment %} {% if settings.WEB_OAUTH.github %}
+          <a class="btn btn-dark text-white" href="{% provider_login_url 'github' %}"><i class="fab fa-github"></i>
+            GitHub</a>
+          {% endif %} {% endcomment %}
+
+          {% if settings.WEB_OAUTH.google %}
+          <a class="btn btn-danger text-white" href="{% provider_login_url 'google' %}"><i class="fab fa-google"></i>
+            Google</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
 </div>
-{% endblock content %}
+{% endblock %}

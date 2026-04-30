@@ -1,37 +1,42 @@
 {% if results.capa_summary %}
-<div class="card mt-4">
-    <div class="card-header">
-        <h4>CAPA Analysis Summary</h4>
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 text-white"><i class="fas fa-microscope me-2 text-info"></i> CAPA Analysis Summary</h5>
+        <button class="btn btn-sm btn-outline-light collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#capa_summary_content" aria-expanded="false">
+            <i class="fas fa-chevron-down text-white-50"></i>
+        </button>
     </div>
-    <div class="card-body">
-        {% if results.capa_summary.CAPABILITY or results.capa_summary.ATTCK or results.capa_summary.MBC %}
-            {% if results.capa_summary.CAPABILITY %}
-                <h5>Capabilities:</h5>
-                <ul>
-                {% for capability in results.capa_summary.CAPABILITY %}
-                    <li>{{ capability }}</li>
-                {% endfor %}
-                </ul>
+    <div id="capa_summary_content" class="collapse">
+        <div class="card-body">
+            {% if results.capa_summary.CAPABILITY or results.capa_summary.ATTCK or results.capa_summary.MBC %}
+                {% if results.capa_summary.CAPABILITY %}
+                    <h6 class="text-info"><i class="fas fa-shield-alt me-1"></i> Capabilities:</h6>
+                    <ul class="text-light">
+                    {% for capability in results.capa_summary.CAPABILITY %}
+                        <li>{{ capability }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+                {% if results.capa_summary.ATTCK %}
+                    <h6 class="text-warning"><i class="fas fa-crosshairs me-1"></i> ATT&CK Techniques:</h6>
+                    <ul class="text-light">
+                    {% for attck in results.capa_summary.ATTCK %}
+                        <li><a href="https://attack.mitre.org/techniques/{{ attck.t_id }}/" class="text-warning" target="_blank">{{ attck.t_id }}</a> - {{ attck.ttp_name }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+                {% if results.capa_summary.MBC %}
+                    <h6 class="text-success"><i class="fas fa-layer-group me-1"></i> MBC Objectives:</h6>
+                    <ul class="text-light">
+                    {% for mbc in results.capa_summary.MBC %}
+                        <li>{{ mbc }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+            {% else %}
+                <p class="text-white-50 mb-0">No CAPA results to display.</p>
             {% endif %}
-            {% if results.capa_summary.ATTCK %}
-                <h5>ATT&CK Techniques:</h5>
-                <ul>
-                {% for attck in results.capa_summary.ATTCK %}
-                    <li>{{ attck.t_id }} - {{ attck.ttp_name }}</li>
-                {% endfor %}
-                </ul>
-            {% endif %}
-            {% if results.capa_summary.MBC %}
-                <h5>MBC Objectives:</h5>
-                <ul>
-                {% for mbc in results.capa_summary.MBC %}
-                    <li>{{ mbc }}</li>
-                {% endfor %}
-                </ul>
-            {% endif %}
-        {% else %}
-            <p>No CAPA results to display.</p>
-        {% endif %}
+        </div>
     </div>
 </div>
 {% endif %}

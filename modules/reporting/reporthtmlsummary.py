@@ -11,6 +11,7 @@ from io import BytesIO
 
 import PIL
 from lib.cuckoo.common.abstracts import Report
+from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.exceptions import CuckooReportError
 from lib.cuckoo.common.objects import File
@@ -56,11 +57,11 @@ class ReportHTMLSummary(Report):
                     continue
 
                 with BytesIO() as output:
-                    # resize the image to thumbnail size, as weasyprint can't handle resizing
+                    # resize the image to a readable size for PDF reports
                     with suppress(Exception):
                         img = Image.open(shot_path)
-                        img = img.resize((150, 100), PIL.Image.ANTIALIAS)
-                        img.save(output, format="JPEG")
+                        img = img.resize((800, 600), PIL.Image.LANCZOS)
+                        img.save(output, format="JPEG", quality=85)
 
                     shot = {}
                     shot["id"] = os.path.splitext(File(shot_path).get_name())[0]
@@ -90,6 +91,8 @@ class ReportHTMLSummary(Report):
             }
         )
         env.loader = FileSystemLoader(os.path.join(CUCKOO_ROOT, "data", "html"))
+        results["local_conf"] = self.options
+        results["network_proc_map"] = Config("processing").network.process_map
         try:
             tpl = env.get_template("report.html")
             html = tpl.render({"results": results, "summary_report": True})

@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block page_title %}
+  Notifications
+{% endblock %}
+{% block content %}
+  <div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h5 class="fw-semibold mb-1"><i class="fas fa-bell me-2 text-primary"></i>All Notifications</h5>
+        <small class="text-muted">All system activity is recorded here</small>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" onclick="markAllRead()"><i class="fas fa-check-double me-1"></i> Mark All as Read</button>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        {% for notif in notifications %}
+          <div class="notif-row d-flex align-items-start p-3 border-bottom 
+                  {% if not notif.is_read %}notif-unread{% endif %}" data-id="{{ notif.id }}" style="cursor:pointer;" onclick="readAndGo({{ notif.id }}, '{{ notif.link }}')">
+            <!-- Icon -->
+            <div class="me-3 mt-1">
+              {% if notif.type == 'success' %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(48,178,45,0.15);">
+                  <i class="fas fa-check-circle" style="color:#30b22d;"></i>
+                </div>
+              {% elif notif.type == 'error' %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(237,107,96,0.15);">
+                  <i class="fas fa-times-circle" style="color:#ed6b60;"></i>
+                </div>
+              {% elif notif.type == 'warning' %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(254,215,31,0.15);">
+                  <i class="fas fa-exclamation-triangle" style="color:#fed71f;"></i>
+                </div>
+              {% elif notif.type == 'comment' %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(52,152,219,0.15);">
+                  <i class="fas fa-comment" style="color:#3498db;"></i>
+                </div>
+              {% elif notif.type == 'reply' %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(155,89,182,0.15);">
+                  <i class="fas fa-reply" style="color:#9b59b6;"></i>
+                </div>
+              {% else %}
+                <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:38px;height:38px;background:rgba(99,132,255,0.15);">
+                  <i class="fas fa-info-circle" style="color:#6384ff;"></i>
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Content -->
+            <div class="flex-grow-1">
+              <div class="d-flex justify-content-between align-items-start">
+                <span class="fw-semibold" style="font-size:0.875rem;">{{ notif.title }}</span>
+                <small class="text-muted ms-2 flex-shrink-0">{{ notif.created_at|date:'d M Y, H:i' }}</small>
+              </div>
+              <p class="mb-0 text-muted" style="font-size:0.8rem;">{{ notif.message }}</p>
+            </div>
+
+            <!-- Unread dot -->
+            {% if not notif.is_read %}
+              <div class="ms-2 mt-2 flex-shrink-0 unread-dot">
+                <span class="rounded-circle d-inline-block" style="width:8px;height:8px;background:var(--primary);"></span>
+              </div>
+            {% endif %}
+          </div>
+        {% empty %}
+          <div class="text-center py-5 text-muted">
+            <i class="fas fa-bell-slash fa-2x mb-3 d-block"></i>
+            No notification
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .notif-unread {
+      background: rgba(99, 132, 255, 0.05);
+    }
+    .notif-row:hover {
+      background: rgba(99, 132, 255, 0.08) !important;
+    }
+    .notif-row {
+      transition: background 0.2s;
+    }
+  </style>
+
+  <script>
+    function getCookie(name) {
+      let v = null
+      document.cookie.split(';').forEach((c) => {
+        c = c.trim()
+        if (c.startsWith(name + '=')) v = decodeURIComponent(c.slice(name.length + 1))
+      })
+      return v
+    }
+    
+    function readAndGo(id, link) {
+      const el = document.querySelector('[data-id="' + id + '"]')
+      console.log('Clicked id:', id, 'element:', el) // debug
+    
+      fetch('/api/notifications/' + id + '/read/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrf() }
+      })
+        .then((r) => {
+          console.log('Response status:', r.status)
+          return r.json()
+        })
+        .then((data) => {
+          console.log('Response data:', data)
+          if (el) {
+            el.classList.remove('notif-unread')
+            const dot = el.querySelector('.unread-dot')
+            if (dot) dot.remove()
+            console.log('DOM updated')
+          } else {
+            console.log('Element not found!')
+          }
+          // Wait redirect 500ms to update DOM
+          if (link && link !== '#' && link !== 'None') {
+            setTimeout(() => {
+              window.location.href = link
+            }, 500)
+          }
+        })
+        .catch((err) => console.error('Error:', err))
+    }
+    
+    function markAllRead() {
+      fetch('/api/notifications/read-all/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        }
+      })
+        .then((r) => r.json())
+        .then(() => {
+          document.querySelectorAll('.notif-row').forEach((row) => {
+            row.classList.remove('notif-unread')
+          })
+          document.querySelectorAll('.unread-dot').forEach((dot) => dot.remove())
+          const badge = document.getElementById('notifBadge')
+          if (badge) badge.classList.add('d-none')
+        })
+        .catch((err) => console.error('markAllRead error:', err))
+    }
+  </script>
+{% endblock %}

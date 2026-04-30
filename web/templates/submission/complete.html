@@ -1,7 +1,14 @@
 {% extends "base.html" %}
+{% block title %}Submission Complete · AMALV4 Sandbox{% endblock %}
+{% block page_title %}Submission Complete{% endblock %}
 {% block content %}
-
-<div class="alert alert-secondary bg-dark text-white-50"><h4>Submission complete!</h4>
+<style>
+    .btn-go-now:hover {
+    color: black !important;
+}
+</style>
+<div class="alert alert-secondary bg-dark text-white-50">
+    <h4>Submission complete!</h4>
     The following tasks were added successfully:
     {% for task in tasks %}
         <a href="{% url "submission_status" task %}">{{task}}</a>
@@ -10,21 +17,56 @@
 </div>
 
 {% if remote_console %}
-    <div class="alert alert-secondary bg-dark text-white-50"><h4>Remote Control Session</h4>
-        Tasks:
-        {% for task in tasks %}
-            <a href="{% url "remote_session" task %}">{{task}}</a>
-        {% endfor %}.
-        Click on the link to start an interactive remote session.
+    <div class="alert alert-info bg-dark text-white border-info">
+        <i class="fas fa-desktop me-2"></i>
+        <strong>Remote Session:</strong> Redirecting to remote console in 
+        <strong id="countdown">3</strong> seconds...
+        <a href="{% url 'remote_session' tasks.0 %}" class="btn btn-sm btn-outline-info ms-3 btn-go-now">
+            <i class="fas fa-bolt me-1"></i>Go Now
+        </a>
+        <button class="btn btn-sm btn-outline-warning ms-2" onclick="cancelRedirect()">Cancel</button>
     </div>
+
+    <script>
+        let seconds = 3;
+        let redirectTimer;
+        let countdownTimer;
+
+        function startRedirect() {
+            const remoteUrl = "{% url 'remote_session' tasks.0 %}";
+
+            redirectTimer = setTimeout(function () {
+                window.location.href = remoteUrl;
+            }, seconds * 1000);
+
+            countdownTimer = setInterval(function () {
+                seconds--;
+                const el = document.getElementById('countdown');
+                if (el) el.textContent = seconds;
+                if (seconds <= 0) clearInterval(countdownTimer);
+            }, 1000);
+        }
+
+        function cancelRedirect() {
+            clearTimeout(redirectTimer);
+            clearInterval(countdownTimer);
+            document.querySelector('.alert-info').innerHTML =
+                '<i class="fas fa-times-circle me-2 text-warning"></i> Auto-redirect cancelled. ' +
+                '<a href="{% url "remote_session" tasks.0 %}" class="alert-link">Go manually</a>';
+        }
+
+        startRedirect();
+    </script>
 {% endif %}
 
 {% if existent_tasks %}
     {% for sha256, details in existent_tasks.items %}
-        <div class="alert alert-secondary bg-dark text-white-50"><h4>Existent tasks for this hash: {{sha256}}!</h4>
+        <div class="alert alert-secondary bg-dark text-white-50">
+            <h4>Existent tasks for this hash: {{sha256}}!</h4>
             <ul>
                 {% for block in details %}
-                    <li>Task id: <a href="{% url "report" block.info.id %}"><span>{{block.info.id}}</span></a> {% if block.family  %} - Detection: <span style="color:#EE1B2F;">{{block.malfamily}}</span>{% endif %}</li>
+                    <li>Task id: <a href="{% url "report" block.info.id %}"><span>{{block.info.id}}</span></a>
+                    {% if block.family %} - Detection: <span style="color:#EE1B2F;">{{block.malfamily}}</span>{% endif %}</li>
                 {% endfor %}
             </ul>
         </div>
@@ -32,14 +74,15 @@
 {% endif %}
 
 {% if errors %}
-    <div class="alert alert-danger"><h4>Submission Failed!</h4>
-    <ul>
-    {% for block in errors %}
-        {% for k, v in block.items %}
-            <li><b>{{k}}</b> - {{v}}</li>
+    <div class="alert alert-danger">
+        <h4>Submission Failed!</h4>
+        <ul>
+        {% for block in errors %}
+            {% for k, v in block.items %}
+                <li><b>{{k}}</b> - {{v}}</li>
+            {% endfor %}
         {% endfor %}
-    {% endfor %}
-    </ul>
+        </ul>
     </div>
 {% endif %}
 

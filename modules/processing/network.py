@@ -283,6 +283,7 @@ class Pcap:
                     return True
 
     def _get_cn(self, ip):
+        """Return (country_name, country_code, asn, asn_name, latitude, longitude) for an IP."""
         if proc_cfg.network.country_lookup:
             maxminddb_client = get_maxminddb_client()
             if maxminddb_client:
@@ -290,12 +291,61 @@ class Pcap:
                     ip_info = maxminddb_client.get(ip)
                     # ipinfo db
                     if "continent_name" in ip_info:
-                        return ip_info.get("country", "unknown").lower(), ip_info.get("asn", ""), ip_info.get("as_name", "")
+                        return (
+                            ip_info.get("country", "unknown").lower(),
+                            ip_info.get("country_code", "").lower(),
+                            ip_info.get("asn", ""),
+                            ip_info.get("as_name", ""),
+                            ip_info.get("latitude"),
+                            ip_info.get("longitude"),
+                        )
                     else:
-                        return ip_info.get("country", {}).get("names", {}).get("en", "unknown"), "", ""
+                        country_entry = ip_info.get("country", {})
+                        location_entry = ip_info.get("location", {})
+                        return (
+                            country_entry.get("names", {}).get("en", "unknown"),
+                            country_entry.get("iso_code", "").lower(),
+                            "",
+                            "",
+                            location_entry.get("latitude"),
+                            location_entry.get("longitude"),
+                        )
                 except Exception:
                     log.debug("Unable to resolve GEOIP for %s", ip)
-        return "unknown", "", ""
+        return "unknown", "", "", "", None, None
+
+    def _batch_ipapi_lookup(self, ips):
+        """Batch-lookup IPs via ip-api.com for those still lacking geo data.
+        Free endpoint: up to 100 IPs per request, no API key required.
+        Returns dict keyed by IP: {country_name, country_code, asn, asn_name, latitude, longitude}.
+        """
+        if not ips:
+            return {}
+        try:
+            import requests as _req
+
+            payload = [{"query": ip, "fields": "status,country,countryCode,as,org,lat,lon,query"} for ip in ips]
+            resp = _req.post("http://ip-api.com/batch", json=payload, timeout=10)
+            if resp.status_code != 200:
+                return {}
+            results = {}
+            for item in resp.json():
+                if item.get("status") != "success":
+                    continue
+                raw_as = item.get("as", "")  # e.g. "AS15169 Google LLC"
+                parts = raw_as.split(" ", 1)
+                results[item["query"]] = {
+                    "country_name": item.get("country", "unknown").lower(),
+                    "country_code": item.get("countryCode", "").lower(),
+                    "asn": parts[0] if parts else "",
+                    "asn_name": parts[1] if len(parts) > 1 else item.get("org", ""),
+                    "latitude": item.get("lat"),
+                    "longitude": item.get("lon"),
+                }
+            return results
+        except Exception as e:
+            log.debug("ip-api.com batch lookup failed: %s", e)
+            return {}
 
     def _add_hosts(self, connection):
         """Add IPs to unique list.
@@ -340,18 +390,43 @@ class Pcap:
                         break
                 if hostname:
                     break
-            country_name, asn, asn_name = self._get_cn(ip)
+            country_name, country_code, asn, asn_name, latitude, longitude = self._get_cn(ip)
             enriched_hosts.append(
                 {
                     "ip": ip,
                     "country_name": country_name,
+                    "country_code": country_code,
                     "asn": asn,
                     "asn_name": asn_name,
+                    "latitude": latitude,
+                    "longitude": longitude,
                     "hostname": hostname,
                     "inaddrarpa": inaddrarpa,
                     "ports": self.ip_n_ports.get(ip, []),
                 }
             )
+
+        # Fallback: batch-lookup any IPs still missing geo info via ip-api.com
+        unknown_ips = [h["ip"] for h in enriched_hosts if h.get("country_name", "unknown") in ("unknown", "")]
+        if unknown_ips:
+            # ip-api.com batch endpoint accepts max 100 IPs per request
+            for chunk_start in range(0, len(unknown_ips), 100):
+                chunk = unknown_ips[chunk_start : chunk_start + 100]
+                fallback = self._batch_ipapi_lookup(chunk)
+                for host in enriched_hosts:
+                    if host["ip"] in fallback:
+                        geo = fallback[host["ip"]]
+                        host["country_name"] = geo["country_name"]
+                        host["country_code"] = geo["country_code"]
+                        if not host.get("asn"):
+                            host["asn"] = geo["asn"]
+                        if not host.get("asn_name"):
+                            host["asn_name"] = geo["asn_name"]
+                        if not host.get("latitude"):
+                            host["latitude"] = geo.get("latitude")
+                        if not host.get("longitude"):
+                            host["longitude"] = geo.get("longitude")
+
         return enriched_hosts
 
     def _tcp_dissect(self, conn, data, ts):

@@ -2,7 +2,7 @@ body {
     font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
     font-size: 14px;
     padding-top: 20px;
-    background: #1c1c1c;
+    background: #ffffff;
     color: #fff;
 }
 @media print {
@@ -12,6 +12,118 @@ body {
     .table{
         color: #000!important;
     }
+}
+
+.card-malscore-wrapper {
+  position: relative;
+}
+.ms-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 110px;
+  border-left: 1px solid var(--border);
+  border-bottom-right-radius: 5px;
+  overflow: hidden;
+}
+
+.ms-panel.danger  { background: var(--error); }
+.ms-panel.warning { background: var(--warning); }
+.ms-panel.success { background: var(--success); }
+
+.ms-panel.warning .ms-label,
+.ms-panel.warning .ms-number,
+.ms-panel.warning .ms-slash,
+.ms-panel.warning .ms-denom {
+  color: #000 !important;
+}
+
+.ms-label { 
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; 
+  text-transform: uppercase; color: #fff;
+  position: absolute; top: 10px;
+}
+.ms-value { 
+  position: relative; 
+  width: 90px; height: 70px; 
+}
+.ms-slash {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 80px; font-weight: 200;
+  color: #fff;
+  line-height: 4;
+  user-select: none;
+}
+.ms-number { 
+  position: absolute;
+  top: 10px; left: 0; 
+  font-size: 28px; font-weight: 1000; color: #fff; line-height: 1; 
+}
+.ms-denom  { 
+  position: absolute;
+  bottom: 4px; right: 12px;
+  font-size: 20px; font-weight: 1000; color: #ffffff; line-height: 1;
+}
+
+.detection-link {
+    transition: all 0.2s ease;
+    color: #ffffff !important; 
+}
+
+.detection-link:hover {
+    color: #000000 !important; 
+    text-decoration: none;
+}
+
+.detection-link:hover i {
+    color: #000000 !important;
+}
+.btn-outline-info {
+    color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+.btn-outline-info:hover {
+    background-color: var(--primary) !important;
+    color: #fff !important;
+}
+.btn-secondary {
+    background-color: var(--muted) !important;
+    border-color: var(--border) !important;
+    color: var(--foreground) !important;
+}
+.btn-report-custom {
+    background: transparent !important;
+    color: var(--primary) !important;
+    border: 1px solid var(--primary) !important;
+    transition: all 0.2s ease-in-out;
+    font-weight: 500;
+}
+.btn-report-custom:hover {
+    background-color: var(--primary) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 10px rgba(99, 132, 255, 0.4);
+    transform: translateY(-1px);
+}
+.table-dark {
+    --bs-table-border-color: var(--border);
+}
+
+@media print {
+    /* Memaksa tab content untuk tampil semua ke bawah di PDF */
+    .tab-pane {
+        display: block !important;
+        opacity: 1 !important;
+        page-break-inside: avoid;
+        margin-bottom: 20px;
+    }
+    .nav-pills { display: none !important; } /* Sembunyikan navigasi tab di PDF */
+    
+    .card { border: 1px solid #444 !important; }
+    .bg-dark { background-color: #1a1d21 !important; }
+    .text-white { color: #ffffff !important; }
 }
 
 @page {

@@ -1,0 +1,297 @@
+{% extends 'two_factor/_base_focus.html' %}
+{% load i18n %}
+{% load socialaccount %}
+{% load two_factor_tags %}
+
+{% block extra_media %}
+  {{ form.media }}
+{% endblock %}
+{% block title %}
+  Log In · AMALV4 Sandbox
+{% endblock %}
+{% block content %}
+  <style>
+    /* Background  */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    body {
+      background-image: url('/static/img/Login_Backround.png') !important;
+      background-size: cover !important;
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      background-attachment: fixed !important;
+      background-color: #0f1117 !important;
+    }
+    
+    /* Card blur */
+    .card {
+      background: rgba(15, 17, 23, 0.5) !important;
+      backdrop-filter: blur(6px) !important;
+      -webkit-backdrop-filter: blur(6px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Gap antar field form */
+    .mb-3,
+    .form-group {
+      margin-bottom: 1.2rem !important;
+    }
+    
+    /* label */
+    label {
+      margin-bottom: 0.4rem !important;
+      font-size: 0.875rem;
+      color: var(--secondary) !important;
+    }
+    
+    /* Input height */
+    .form-control {
+      padding: 0.6rem 0.9rem !important;
+      font-size: 0.9rem !important;
+    }
+    .otp-box {
+      height: 3.5rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #000;
+      border-radius: 0.5rem;
+    }
+    .otp-box:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.25rem rgba(254, 240, 138, 0.4); /* Efek glow kuning saat diklik */
+    }
+    .hover:hover {
+      color: #cbd5e1 !important;
+    }
+  </style>
+  <div class="m-0 start-0 top-0 d-flex w-100 justify-content-center align-items-center flex-column position-absolute" style="min-height: 100vh;">
+    <div class="card shadow-lg border-0" style="max-width:420px; width:100%; border-radius:15px;">
+      <div class="card-body p-4">
+        <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+          <img src="{{ STATIC_URL }}img/BSSN.png" width="70" height="70" alt="Logo" style="object-fit: contain;" />
+          <h3 class="mb-0">{% trans 'Sign In to AMAL 4' %}</h3>
+        </div>
+        {% if wizard.steps.current == 'auth' %}
+          <p class="text-center text-muted small">
+            If you don't have an account,
+            <a href="{% url 'account_signup' %}" style="color:#dc3545;">Sign up</a>
+            first.
+          </p>
+        {% endif %}
+        {% if wizard.steps.current == 'token' %}
+          <p class="text-center text-muted small">If you have problems with your OTP device, you can contact your administrator</p>
+        {% endif %}
+
+        <form action="" method="post">
+          {% block main_form_content %}
+            {% csrf_token %}
+            {{ wizard.management_form }}
+            {% for field in wizard.form %}
+              <div class="mb-3">
+                <label for="{{ field.id_for_label }}" class="form-label">
+                  {% if 'username' in field.name %}
+                    Username*
+                  {% elif 'password' in field.name %}
+                    Password*
+                  {% elif wizard.steps.current == 'backup' %}
+                    Enter Backup Token*
+                  {% elif 'token' in field.name %}
+                    Enter OTP Code*
+                  {% else %}
+                    {{ field.label }} {# Teks default jika ada field lain #}
+                  {% endif %}
+                </label>
+                {% if wizard.steps.current == 'token' %}
+                  <input type="hidden" name="{{ field.html_name }}" id="real-token-input" value="{{ field.value|default:'' }}" />
+
+                  <div class="d-flex flex-grow-1 justify-content-between gap-2 mt-3 mb-2">
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+                  </div>
+                {% elif field.field.widget.input_type == 'password' %}
+                  <div class="position-relative">
+                    <input type="password" name="{{ field.html_name }}" id="{{ field.auto_id }}" class="form-control shadow-sm pe-5" placeholder="Insert {{ field.label }}" value="{{ field.value|default:'' }}" />
+                    <i class="fa-solid fa-eye position-absolute hover" id="toggle-password" style="right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; transition: color 0.3s ease-in;"></i>
+                  </div>
+                {% else %}
+                  <input type="{{ field.field.widget.input_type|default:'text' }}" name="{{ field.html_name }}" id="{{ field.auto_id }}" class="form-control shadow-sm" placeholder="Insert {{ field.label }}" value="{{ field.value|default:'' }}" />
+                {% endif %}
+
+                {% if form.errors %}
+                  {% if form.non_field_errors %}
+                    {% for error in form.non_field_errors %}
+                      <div class="text-danger" style="font-size: 0.8rem;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        {% if 'Invalid token' in error %}
+                          The OTP code you entered is incorrect or has expired.
+                        {% else %}
+                          {{ error }}
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  {% endif %}
+                {% endif %}
+                {% if field.name == 'password' or field.name == 'auth-password' %}
+                  {% if not wizard.steps.prev %}
+                    <div class="mt-2 text-start">
+                      <a href="{% url 'password_reset' %}" class="text-decoration-none" style="color: #60a5fa; font-size: 0.8rem;">Forgot your password?</a>
+                    </div>
+                  {% endif %}
+                {% endif %}
+              </div>
+            {% endfor %}
+
+            {# hidden submit button to enable [enter] key #}
+            <input type="submit" value="" hidden />
+
+            {% if other_devices %}
+              <p>
+                {% trans 'Or, alternatively, use one of your other authentication methods:' %}
+              </p>
+              <p>
+                {% for other in other_devices %}
+                  <button name="challenge_device" value="{{ other.persistent_id }}" class="btn btn-secondary btn-block" type="submit">{{ other|as_action }}</button>
+                {% endfor %}
+              </p>
+            {% endif %}
+
+            {% include 'two_factor/_wizard_actions.html' %}
+          {% endblock %}
+        </form>
+        {% if wizard.steps.current == 'token' %}
+          {% if backup_tokens %}
+            <hr />
+            <div class="backup_tokens_form">
+              <form action="" method="post">
+                {% csrf_token %}
+                <p>
+                  {% trans 'As a last resort, you can use a backup token:' %}
+                </p>
+                <p>
+                  <button name="wizard_goto_step" type="submit" value="backup" class="btn btn-sm btn-secondary btn-block w-100 py-2 fw-bold"><i class="fa-solid fa-key pe-2"></i>{% trans 'Use Backup Token' %}</button>
+                </p>
+              </form>
+            </div>
+          {% endif %}
+        {% endif %}
+        {% comment %}Step name for debugging{% endcomment %}
+        {% comment %} <div class="alert alert-info">Step saat ini: "{{ wizard.steps.current }}"</div> {% endcomment %}
+        {% comment %}Redirect user ke dashboard jika sudah dalam keadaan login{% endcomment %}
+        {% if user.is_authenticated %}
+          <script>
+            window.location.href = "{% url 'dashboard' %}"
+          </script>
+        {% elif wizard.steps.current == 'auth' %}
+          <div class="form-check text-start mb-4 mt-2">
+            <input type="checkbox" class="form-check-input" id="rememberMe" name="remember_me" />
+            <label class="form-check-label" for="rememberMe" style="color: #94a3b8; font-size: 0.9rem;">Remember Me</label>
+          </div>
+          {% if settings.WEB_OAUTH.github or settings.WEB_OAUTH.google %}
+            <div class="text-center mt-2">
+              <p class="text-muted small mb-2">Or login with</p>
+
+              <div class="d-flex justify-content-center gap-3">
+                {% comment %} {% if settings.WEB_OAUTH.github %}
+                  <a class="btn btn-dark text-white" href="{% provider_login_url 'github' %}">
+                    <i class="fab fa-github"></i>
+                    GitHub
+                  </a>
+                {% endif %} {% endcomment %}
+
+                {% if settings.WEB_OAUTH.google %}
+                  <a class="btn btn-danger text-white" href="{% provider_login_url 'google' %}">
+                    <i class="fab fa-google"></i>
+                    Google
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const otpBoxes = document.querySelectorAll('.otp-box')
+      const realInput = document.getElementById('real-token-input')
+    
+      if (otpBoxes.length > 0) {
+        // Fokus ke kotak pertama saat halaman dimuat
+        otpBoxes[0].focus()
+    
+        otpBoxes.forEach((box, index) => {
+          // Event saat ngetik angka
+          box.addEventListener('input', (e) => {
+            // Hanya izinkan angka (buang huruf/simbol)
+            box.value = box.value.replace(/[^0-9]/g, '')
+    
+            // Pindah ke kotak berikutnya jika sudah diisi
+            if (box.value !== '' && index < otpBoxes.length - 1) {
+              otpBoxes[index + 1].focus()
+            }
+            updateRealInput()
+          })
+    
+          // Event saat hapus (Backspace)
+          box.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && box.value === '') {
+              if (index > 0) {
+                otpBoxes[index - 1].focus()
+              }
+            }
+          })
+    
+          // Fitur Paste (misal user copas kode "123456")
+          box.addEventListener('paste', (e) => {
+            e.preventDefault()
+            const pastedData = e.clipboardData
+              .getData('text')
+              .replace(/[^0-9]/g, '')
+              .slice(0, 6)
+    
+            for (let i = 0; i < pastedData.length; i++) {
+              otpBoxes[i].value = pastedData[i]
+            }
+    
+            if (pastedData.length > 0) {
+              otpBoxes[Math.min(pastedData.length, 5)].focus()
+            }
+            updateRealInput()
+          })
+        })
+    
+        // Fungsi untuk menggabungkan 6 kotak jadi 1 string dan simpan di hidden input
+        function updateRealInput() {
+          let tokenStr = ''
+          otpBoxes.forEach((b) => (tokenStr += b.value))
+          realInput.value = tokenStr
+        }
+      }
+    })
+    
+    // Toggle password visibility
+    const togglePassword = document.getElementById('toggle-password')
+    const passwordInput = document.querySelector('input[type="password"]')
+    if (togglePassword && passwordInput) {
+      togglePassword.addEventListener('click', function () {
+        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password'
+        passwordInput.setAttribute('type', type)
+        this.classList.toggle('fa-eye')
+        this.classList.toggle('fa-eye-slash')
+      })
+    }
+  </script>
+{% endblock %}

@@ -1327,13 +1327,22 @@ def perform_search(
         list: A list of search results matching the criteria.
     """
     if repconf.mongodb.enabled and repconf.elasticsearchdb.enabled and essearch and not term:
-        multi_match_search = {"query": {"multi_match": {"query": value, "fields": ["*"]}}}
-        numhits = es.search(index=get_analysis_index(), body=multi_match_search, size=0)["hits"]["total"]
+        count_body = {"query": {"multi_match": {"query": value, "fields": ["*"]}}, "size": 0}
+        total_result = es.search(index=get_analysis_index(), body=count_body)["hits"]["total"]
+        if isinstance(total_result, dict):
+            numhits = total_result.get("value", 0)
+        else:
+            numhits = int(total_result)
+        if numhits == 0:
+            return []
+        fetch_body = {
+            "query": {"multi_match": {"query": value, "fields": ["*"]}},
+            "size": numhits,
+            "sort": [{"task_id": {"order": "desc"}}],
+        }
         return [
             d["_source"]
-            for d in es.search(index=get_analysis_index(), body=multi_match_search, sort="task_id:desc", size=numhits)["hits"][
-                "hits"
-            ]
+            for d in es.search(index=get_analysis_index(), body=fetch_body)["hits"]["hits"]
         ]
 
     query_val = False
@@ -1555,15 +1564,22 @@ def parse_request_arguments(request, keyword="POST"):
     lin_options = getattr(request, keyword).get("lin_options", "")
     route = getattr(request, keyword).get("route", "")
     cape = getattr(request, keyword).get("cape", "")
+    password = getattr(request, keyword).get("password", "")
 
     if referrer:
         if options:
             options += ","
         options += f"referrer={referrer}"
 
-    # Linux options
+    # Linux options (overwrites options)
     if lin_options:
         options = lin_options
+
+    # Add password to options at the end (regardless of platform)
+    if password:
+        if options:
+            options += ","
+        options += f"password={password}"
 
     return (
         static,

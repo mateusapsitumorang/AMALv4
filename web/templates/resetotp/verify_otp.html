@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block content %}
+  <style>
+    /* Background  */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    body {
+      background-image: url('/static/img/Login_Backround.png') !important;
+      background-size: cover !important;
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      background-attachment: fixed !important;
+      background-color: #0f1117 !important;
+    }
+    
+    /* Card blur */
+    .card {
+      background: rgba(15, 17, 23, 0.5) !important;
+      backdrop-filter: blur(6px) !important;
+      -webkit-backdrop-filter: blur(6px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Gap antar field form */
+    .mb-3,
+    .form-group {
+      margin-bottom: 1.2rem !important;
+    }
+    
+    /* label */
+    label {
+      margin-bottom: 0.4rem !important;
+      font-size: 0.875rem;
+      color: var(--secondary) !important;
+    }
+    
+    /* Input height */
+    .form-control {
+      padding: 0.6rem 0.9rem !important;
+      font-size: 0.9rem !important;
+    }
+    .otp-box {
+      height: 3.5rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+      background-color: #fef08a; /* Warna kuning desainmu */
+      color: #000;
+      border-radius: 0.5rem;
+    }
+    .otp-box:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.25rem rgba(254, 240, 138, 0.4); /* Efek glow kuning saat diklik */
+    }
+  </style>
+
+  <div class="m-0 start-0 top-0 d-flex w-100 justify-content-center align-items-center flex-column position-absolute" style="min-height: 100vh;">
+    <div class="card shadow-lg border-0" style="background-color: #1e293b; width: 100%; max-width: 420px; border-radius: 1rem;">
+      <div class="card-body p-4">
+        <div class="text-center mb-4">
+          <h3 class="text-white fw-bold">Verify OTP for reset password</h3>
+          <p style="color: #94a3b8; font-size: 0.9rem;">
+            Please enter the 6-digit code sent to <strong>{{ email }}</strong>
+          </p>
+        </div>
+
+        <form method="post" action="{% url 'verify_otp' %}">
+          {% csrf_token %}
+          <label for="otp_code" class="form-label">Enter OTP Code*</label>
+          <input type="hidden" name="otp_code" id="real-otp-input" value="" />
+
+          <div class="d-flex flex-grow-1 justify-content-between gap-2 mb-2 overflow-hidden">
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+            <input type="text" class="form-control text-center otp-box shadow-sm border-0" maxlength="1" inputmode="numeric" />
+          </div>
+
+          {% if messages %}
+            {% for message in messages %}
+              {% if 'success' in message.tags %}
+                <div class="text-success" style="font-size: 0.8rem;">
+                  <i class="fa-solid fa-check-circle"></i> {{ message }}
+                </div>
+              {% endif %}
+              {% if 'error' in message.tags %}
+                <div class="text-danger" style="font-size: 0.8rem;">
+                  <i class="fa-solid fa-triangle-exclamation"></i> {{ message }}
+                </div>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+
+          <button type="submit" class="btn btn-primary w-100 mt-3 py-2 fw-bold">{% trans 'Verify OTP Code' %}</button>
+          <a href="{% url 'two_factor:login' %}" class="btn btn-outline-secondary w-100 mt-2 py-2"><i class="fa-solid fa-arrow-left-long pe-2"></i>{% trans 'Back to Login' %}</a>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const otpBoxes = document.querySelectorAll('.otp-box')
+      const realInput = document.getElementById('real-otp-input')
+    
+      if (otpBoxes.length > 0) {
+        otpBoxes[0].focus()
+    
+        otpBoxes.forEach((box, index) => {
+          box.addEventListener('input', (e) => {
+            box.value = box.value.replace(/[^0-9]/g, '') // Hanya izinkan angka
+            if (box.value !== '' && index < otpBoxes.length - 1) {
+              otpBoxes[index + 1].focus()
+            }
+            updateRealInput()
+          })
+    
+          box.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && box.value === '') {
+              if (index > 0) otpBoxes[index - 1].focus()
+            }
+          })
+    
+          box.addEventListener('paste', (e) => {
+            e.preventDefault()
+            const pastedData = e.clipboardData
+              .getData('text')
+              .replace(/[^0-9]/g, '')
+              .slice(0, 6)
+            for (let i = 0; i < pastedData.length; i++) {
+              otpBoxes[i].value = pastedData[i]
+            }
+            if (pastedData.length > 0) otpBoxes[Math.min(pastedData.length, 5)].focus()
+            updateRealInput()
+          })
+        })
+    
+        function updateRealInput() {
+          let tokenStr = ''
+          otpBoxes.forEach((b) => (tokenStr += b.value))
+          realInput.value = tokenStr
+        }
+      }
+    })
+  </script>
+{% endblock %}

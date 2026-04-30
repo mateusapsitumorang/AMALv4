@@ -1,42 +1,204 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <link rel="icon" href="{% static 'img/cape.png' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="icon" href="{% static 'img/BSSN.png' %}">
+    <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="{% static 'css/guac-main.css' %}" rel="stylesheet" type="text/css"/>
     <script src="{% static 'js/crypto-js.min.js' %}"></script>
     <script src="{% static 'js/guac-main.js' %}"></script>
     <script src="{% static 'js/guacamole-1.4.0-all.min.js' %}"></script>
     <script src="{% static 'js/jquery.js' %}"></script>
     <script src="{% static 'js/jquery-ui.min.js' %}"></script>
-    <meta charset="utf-8"/>
-    <title>Guacamole Console</title>
+    <title>Remote Session · AMALV4 Sandbox</title>
 </head>
-<body>
+<body class="console-page">
+
+    <div class="backdrop" id="backdrop"></div>
+    <div id="toast-container"></div>
+
     <div class="guaconsole">
-        <div>
-            <button id="stopTask">End Session</button>
+
+        <!-- ===== TOPBAR ===== -->
+        <header class="topbar">
+            <div class="left">
+                <img src="{% static 'img/BSSN.png' %}" alt="BSSN" class="logo">
+                <h1>Remote Session - AMALV4</h1>
+            </div>
+            <div class="center">
+                <span class="session-info">
+                    Task <strong>{{ task_id }}</strong>&nbsp;·&nbsp;Session <strong>{{ session_id }}</strong>
+                </span>
+            </div>
+            <div class="right">
+                <button id="viewTaskBtn" class="btn btn-primary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    <span class="btn-label">Analysis</span>
+                </button>
+                <button id="stopTask" class="btn btn-danger">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>
+                    <span class="btn-label">End Session</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- ===== TOOLBAR ===== -->
+        <div class="toolbar">
+            <div class="conn-status">
+                <span class="conn-dot" id="connDot"></span>
+                <span id="connLabel">Connecting…</span>
+            </div>
+
+            <div class="toolbar-divider"></div>
+
+            <button class="btn-icon" id="btnScreenshot" title="Screenshot (Alt+P)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </button>
+
+            <button class="btn-icon" id="btnClipboard" title="Send clipboard to session">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-3"/></svg>
+            </button>
+
+            <button class="btn-icon" id="btnCtrlAltDel" title="Send Ctrl+Alt+Del">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+
+            <div class="toolbar-divider"></div>
+
+            <button class="btn-icon" id="btnFitScreen" title="Toggle fit screen (Alt+F)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+            </button>
+
+            <button class="btn-icon" id="btnFullscreen" title="Toggle fullscreen (F11)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
+
+            <div class="toolbar-divider"></div>
+
+            <button class="btn-icon" id="btnShortcuts" title="Keyboard shortcuts (Alt+K)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
+            </button>
+
+            <div class="toolbar-spacer"></div>
+
+            <div class="conn-status">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span id="sessionTimer">00:00:00</span>
+            </div>
         </div>
+
+        <!-- ===== TERMINAL ===== -->
         <div id="container">
             <div id="terminal"></div>
         </div>
-        <div class="dialog" id="launch_error">
-            <div class="inner">
-                <p class="message"></p>
-                <p class="error_msg"></p>
-                <button type="button" id="taskStatus">View Task</button>
+
+        <!-- ===== SHORTCUT PANEL ===== -->
+        <div class="shortcut-panel" id="shortcutPanel">
+            <div class="sp-header">
+                <h3>Keyboard Shortcuts</h3>
+                <button class="sp-close" id="spClose">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="sp-body">
+                <div class="sc-row">
+                    <span class="sc-desc">Screenshot</span>
+                    <span class="sc-keys"><span class="kbd">Alt</span><span class="kbd">P</span></span>
+                </div>
+                <div class="sc-row">
+                    <span class="sc-desc">Toggle fit screen</span>
+                    <span class="sc-keys"><span class="kbd">Alt</span><span class="kbd">F</span></span>
+                </div>
+                <div class="sc-row">
+                    <span class="sc-desc">Toggle fullscreen</span>
+                    <span class="sc-keys"><span class="kbd">F11</span></span>
+                </div>
+                <div class="sc-row">
+                    <span class="sc-desc">Keyboard shortcuts panel</span>
+                    <span class="sc-keys"><span class="kbd">Alt</span><span class="kbd">K</span></span>
+                </div>
+                <div class="sc-row">
+                    <span class="sc-desc">Paste to session</span>
+                    <span class="sc-keys"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">V</span></span>
+                </div>
+                <div class="sc-row">
+                    <span class="sc-desc">Ctrl+Alt+Del</span>
+                    <span class="sc-keys"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">Del</span></span>
+                </div>
             </div>
         </div>
-        <script>
-            document.getElementById("stopTask").addEventListener("click", function () {
-                stopTask("{{task_id}}");
-            });
-            var task_url = location.origin + '/submit/status/{{task_id}}/'
-            document.getElementById("taskStatus").addEventListener("click", function() {
-                location.replace(task_url);
-            }, false);
-	        GuacMe("html", "{{guest_ip}}","{{vncport}}", "{{session_id}}", "{{recording_name}}");
-        </script>
+
+        <!-- ===== ERROR DIALOG ===== -->
+        <div class="dialog" id="launch_error">
+            <div class="inner">
+                <div class="dialog-header">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <h3>Remote Session Off</h3>
+                </div>
+                <div class="dialog-body">
+                    <p class="message"></p>
+                </div>
+                <div class="dialog-footer">
+                    <button id="taskStatus" class="btn btn-primary">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        View Task Status
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
+
+    <script>
+        var task_url = location.origin + '/analysis';
+
+        /* ---- Guacamole init ---- */
+        GuacMe("html", "{{guest_ip}}", "{{vncport}}", "{{session_id}}", "{{recording_name}}");
+
+        /* ---- Topbar buttons ---- */
+        document.getElementById('viewTaskBtn').addEventListener('click', function() {
+            location.replace(task_url);
+        });
+
+        document.getElementById('stopTask').addEventListener('click', function() {
+            if (confirm('Are you sure you want to end this session?')) {
+                stopTask('{{task_id}}');
+                guacToast('Ending session…', 'warn');
+                setTimeout(function() { location.replace(task_url); }, 1500);
+            }
+        });
+
+        document.getElementById('taskStatus').addEventListener('click', function() {
+            location.replace(task_url);
+        });
+
+        /* ---- Toolbar buttons ---- */
+        document.getElementById('btnScreenshot').addEventListener('click', function() {
+            guacScreenshot('{{task_id}}');
+        });
+        document.getElementById('btnClipboard').addEventListener('click', guacPushClipboard);
+        document.getElementById('btnCtrlAltDel').addEventListener('click', guacCtrlAltDel);
+        document.getElementById('btnFitScreen').addEventListener('click', guacToggleFit);
+        document.getElementById('btnFullscreen').addEventListener('click', guacToggleFullscreen);
+        document.getElementById('btnShortcuts').addEventListener('click', function() {
+            guacToggleShortcuts();
+        });
+        document.getElementById('spClose').addEventListener('click', function() {
+            guacToggleShortcuts(false);
+        });
+        document.getElementById('backdrop').addEventListener('click', function() {
+            guacToggleShortcuts(false);
+        });
+
+        /* ---- Global keyboard shortcuts ---- */
+        document.addEventListener('keydown', function(e) {
+            if (e.altKey && e.code === 'KeyP') { e.preventDefault(); guacScreenshot('{{task_id}}'); }
+            if (e.altKey && e.code === 'KeyF') { e.preventDefault(); guacToggleFit(); }
+            if (e.altKey && e.code === 'KeyK') { e.preventDefault(); guacToggleShortcuts(); }
+            if (e.code === 'F11')              { e.preventDefault(); guacToggleFullscreen(); }
+        });
+    </script>
 </body>
 </html>

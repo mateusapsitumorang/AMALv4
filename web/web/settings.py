@@ -6,6 +6,7 @@ import sys
 from contextlib import suppress
 from pathlib import Path
 
+
 if os.geteuid() == 0 and os.getenv("CAPE_AS_ROOT", "0") != "1":
     sys.exit("Root is not allowed. You gonna break permission and other parts of CAPE. RTM!")
 
@@ -38,9 +39,9 @@ REPROCESS_TASKS = web_cfg.general.reprocess_tasks
 REPROCESS_FAILED_PROCESSING = web_cfg.general.reprocess_failed_processing
 # CSRF TRUSTED ORIGINS
 # For requests that include the Origin header, Django's CSRF protection
-# requires that header match the origin present in the Host header.
+# requires that header match the origin present in the Host header
 
-csfr_list = ["https://192.168.88.209", "http://192.168.88.209"]
+csfr_list = ["https://192.168.88.244", "http://192.168.88.244", "https://amal123dev.com", "http://100.108.26.43", "https://100.108.26.43"]
 if web_cfg.security.csrf_trusted_origins:
     for host in web_cfg.security.csrf_trusted_origins.split(","):
         csfr_list.extend([f"http://{host}", f"https://{host}"])
@@ -80,7 +81,7 @@ ELASTIC_VERIFY_CERTS = cfg.elasticsearchdb.get("verify_certs", None)
 moloch_cfg = cfg.moloch
 zip_cfg = web_cfg.zipped_download
 
-URL_ANALYSIS = web_cfg.url_analysis.get("enabled", False)
+URL_ANALYSIS = web_cfg.url_analysis.get("enabled", True)
 DLNEXEC = web_cfg.dlnexec.get("enabled", False)
 ZIP_PWD = zip_cfg.get("zip_pwd", b"infected")
 if not isinstance(ZIP_PWD, bytes):
@@ -105,7 +106,15 @@ NETWORK_PROC_MAP = pro_cfg.network.process_map
 DEBUG = True
 
 # Database settings. We don't need it.
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": "siteauth.sqlite"}}
+DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": "siteauth.sqlite"},
+    'cape': {                          
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'cape',
+        'USER': 'cape',
+        'PASSWORD': 'SuperPuperSecret',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }}
 
 SITE_ID = 1
 
@@ -143,12 +152,12 @@ except ImportError:
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
-MEDIA_ROOT = ""
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
 # Examples: "http://media.lawrence.com/media/", "http://example.com/media/"
-MEDIA_URL = ""
+MEDIA_URL  = "/media/"
 
 # Absolute path to the directory static files should be collected to.
 # Don't put anything in this directory yourself; store your static files
@@ -172,7 +181,14 @@ STATICFILES_FINDERS = (
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
     #    'django.contrib.staticfiles.finders.DefaultStorageFinder',
 )
+ACCOUNT_PASSWORD_CHANGE_REDIRECT_URL = '/profile/'
 
+# Password Policy Validation
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME' : 'custom2fa.validators.PasswordValidator'
+    }
+]
 # Template class for starting w. django 1.10
 TEMPLATES = [
     {
@@ -192,6 +208,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.messages.context_processors.messages",
                 "django_settings_export.settings_export",
+                'profiles.context_processors.user_preferences',
+                'profiles.context_processors.profile_context',
             ],
             "loaders": [
                 "django.template.loaders.filesystem.Loader",
@@ -214,14 +232,15 @@ MIDDLEWARE = [
     "web.headers.CuckooHeaders",
     #'web.middleware.ExceptionMiddleware',
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    # 'django_otp.middleware.OTPMiddleware',
+    'django_otp.middleware.OTPMiddleware',
+    'custom2fa.middleware.EnforceGoogleOTPMiddleware',
     # in case you want custom auth, place logic in web/web/middleware/custom_auth.py
     # "web.middleware.CustomAuth",
     "web.middleware.DBTransactionMiddleware",
     "allauth.account.middleware.AccountMiddleware",
 ]
 
-OTP_TOTP_ISSUER = "CAPE Sandbox"
+OTP_TOTP_ISSUER = "AMALv4"
 
 # Header/protection related
 SECURE_BROWSER_XSS_FILTER = True
@@ -236,6 +255,7 @@ ASGI_APPLICATION = "web.asgi.application"
 
 INSTALLED_APPS = [
     "daphne",
+    'guac',
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -246,28 +266,36 @@ INSTALLED_APPS = [
     "django.contrib.admin",
     # Uncomment the next line to enable admin documentation:
     # 'django.contrib.admindocs',
+    "django.contrib.humanize",
     "analysis",
+    "resetotp",
     "compare",
+    "custom2fa",
     "apiv2",
-    "users",
+    'userprofile',
     "django_extensions",
-    # 'django_otp',
-    # 'django_otp.plugins.otp_totp',
+    'django_otp',
+    'django_otp.plugins.otp_totp',
+    "two_factor",
+    "django_otp.plugins.otp_static",
     # allauth
     "django.contrib.sites",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
     # Keeping this as example but disabling as some of them has extra dependencies. Check official docs.
-    # "allauth.socialaccount.providers.github",
+    "allauth.socialaccount.providers.github",
     # "allauth.socialaccount.providers.gitlab",
-    # "allauth.socialaccount.providers.google",
+    "allauth.socialaccount.providers.google",
     # "allauth.socialaccount.providers.microsoft",
     "crispy_forms",
     "crispy_bootstrap4",
     "django_recaptcha",  # https://pypi.org/project/django-recaptcha/
     "rest_framework",
     "rest_framework.authtoken",
+    "mobsf",
+    'notifications',
+    'profiles',
 ]
 
 AUDIT_FRAMEWORK = web_cfg.audit_framework.get("enabled", False)
@@ -329,7 +357,7 @@ if web_cfg.registration.get("email_confirmation", False):
     EMAIL_HOST_USER = web_cfg.registration.get("email_user", False)
     EMAIL_HOST_PASSWORD = web_cfg.registration.get("email_password", False)
     EMAIL_PORT = web_cfg.registration.get("email_port", 465)
-    EMAIL_TLS_SSL = web_cfg.registration.get("use_tls", False)
+    EMAIL_USE_TLS = web_cfg.registration.get("use_tls", False)
     EMAIL_USE_SSL = web_cfg.registration.get("use_ssl", False)
     SERVER_EMAIL = EMAIL_HOST_USER
     DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
@@ -347,21 +375,22 @@ else:
 ACCOUNT_EMAIL_REQUIRED = web_cfg.registration.get("email_required", False)
 ACCOUNT_EMAIL_SUBJECT_PREFIX = web_cfg.registration.get("email_prefix_subject", False)
 ACCOUNT_RATE_LIMITS = {"login_failed": "3/m"}
+LOGIN_URL = "two_factor:login"
 LOGIN_REDIRECT_URL = "/"
-ACCOUNT_LOGOUT_REDIRECT_URL = "/accounts/login/"
+ACCOUNT_LOGOUT_REDIRECT_URL = "two_factor:login"
 MANUAL_APPROVE = web_cfg.registration.get("manual_approve", False)
 REGISTRATION_ENABLED = web_cfg.registration.get("enabled", False)
 EMAIL_CONFIRMATION = web_cfg.registration.get("email_confirmation", False)
 SOCIAL_AUTH_EMAIL_DOMAIN = web_cfg.web_auth.get("social_auth_email_domain", False)
 
 # be careful with SOCIALACCOUNT_AUTO_SIGNUP, if True, it will bypass custom sighup functions, default is True
-# SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_AUTO_SIGNUP = True
 # SOCIALACCOUNT_ONLY = True
-# SOCIALACCOUNT_LOGIN_ON_GET=True
+SOCIALACCOUNT_LOGIN_ON_GET=True
 # ACCOUNT_SIGNUP_FORM_CLASS = None
 # In case you want to verify domain of email + set the username
 # SOCIALACCOUNT_ADAPTER = 'web.allauth_adapters.MySocialAccountAdapter'
-# ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
 
 #### AllAuth end
 

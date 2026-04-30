@@ -9,7 +9,7 @@
                     <tr>
                         <th width="10%">Direct</th>
                         <th>IP</th>
-                        <th>Country Name</th>
+                        <th>Country</th>
                         <th>ASN</th>
                         {% if settings.NETWORK_PROC_MAP %} <th>Process Name (PID)</th> {% endif %}
                     </tr>
@@ -31,9 +31,21 @@
                                     <a href="https://www.passivetotal.org/passive/{{host.ip}}" target="_blank">[PT]</a>
                                 {% endif %}
                             </td>
-                            <td>{{host.country_name}}</td>
+                            <td>
+                                {% if host.country_code %}
+                                    <span class="host-flag" data-cc="{{ host.country_code }}"></span>
+                                {% endif %}
+                                {{ host.country_name|default:"unknown"|title }}
+                                {% if not host.country_code or host.country_name == "unknown" %}
+                                    <small class="text-muted ms-1" title="Geo data from ip-api.com">
+                                        <i class="fas fa-globe-americas"></i>
+                                    </small>
+                                {% endif %}
+                            </td>
                             {% if host.asn %}
-                                <td>{{host.asn}}{% if host.asn_name %} - {{host.asn_name}}{% endif %} </td>
+                                <td>{{host.asn}}{% if host.asn_name %} &mdash; {{host.asn_name}}{% endif %}</td>
+                            {% else %}
+                                <td><span class="text-muted">—</span></td>
                             {% endif %}
                             {% if settings.NETWORK_PROC_MAP %}
                                 <td>
@@ -56,3 +68,94 @@
         {% endif %}
     </div>
 </section>
+
+<script>
+(function () {
+    /* Convert ISO-3166-1 alpha-2 country code to flag emoji */
+    function ccToFlag(cc) {
+        if (!cc || cc.length !== 2) return '';
+        return Array.from(cc.toUpperCase()).map(function (c) {
+            return String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65);
+        }).join('');
+    }
+
+    function applyGeoToRow(row, cc, countryName, asnText) {
+        var countryCell = row.countryCell;
+        var flagEl = countryCell.querySelector('.host-flag');
+        if (!flagEl) {
+            flagEl = document.createElement('span');
+            flagEl.className = 'host-flag';
+            countryCell.insertBefore(flagEl, countryCell.firstChild);
+        }
+        if (cc && cc.length === 2) {
+            flagEl.textContent = ccToFlag(cc);
+            flagEl.title = cc.toUpperCase();
+            flagEl.style.fontSize = '1.2em';
+            flagEl.style.marginRight = '4px';
+        }
+        /* update country text node */
+        if (countryName) {
+            Array.from(countryCell.childNodes).forEach(function (n) {
+                if (n.nodeType === 3 && n.textContent.trim().toLowerCase() === 'unknown') {
+                    n.textContent = ' ' + countryName;
+                }
+            });
+        }
+        var globe = countryCell.querySelector('small');
+        if (globe) globe.style.display = 'none';
+        /* update ASN cell */
+        if (asnText) {
+            var asnCell = countryCell.nextElementSibling;
+            if (asnCell) {
+                var cur = asnCell.textContent.trim();
+                if (cur === '\u2014' || cur === '-' || cur === '') {
+                    asnCell.textContent = asnText;
+                }
+            }
+        }
+    }
+
+    /* Render flags for IPs that already have country_code from the backend */
+    document.querySelectorAll('.host-flag[data-cc]').forEach(function (el) {
+        var cc = el.getAttribute('data-cc');
+        if (!cc || cc.length !== 2) return;
+        el.textContent = ccToFlag(cc);
+        el.title = cc.toUpperCase();
+        el.style.fontSize = '1.2em';
+        el.style.marginRight = '4px';
+        el.style.cursor = 'default';
+    });
+
+    /* Client-side fallback: lookup IPs still showing Unknown via ipwho.is (free HTTPS, CORS-enabled) */
+    var unknownRows = [];
+    document.querySelectorAll('#hosts table tr').forEach(function (row) {
+        var cells = row.querySelectorAll('td');
+        if (cells.length < 3) return;
+        var countryCell = cells[2];
+        var text = countryCell.textContent.trim().toLowerCase();
+        if (text.indexOf('unknown') === -1) return;
+        var ipCell = cells[1];
+        var ipText = (ipCell ? ipCell.textContent : '').trim().split(/\s/)[0];
+        if (!ipText || !ipText.match(/^\d+\.\d+\.\d+\.\d+$/)) return;
+        unknownRows.push({ ip: ipText, countryCell: countryCell });
+    });
+
+    if (unknownRows.length === 0) return;
+
+    /* Fire individual HTTPS requests in parallel (ipwho.is: free, CORS-enabled) */
+    unknownRows.forEach(function (row) {
+        fetch('https://ipwho.is/' + row.ip)
+            .then(function (r) { return r.json(); })
+            .catch(function () { return null; })
+            .then(function (data) {
+                if (!data || !data.success) return;
+                var cc = (data.country_code || '').toLowerCase();
+                var countryName = data.country || '';
+                var asn = data.connection ? (data.connection.asn ? 'AS' + data.connection.asn : '') : '';
+                var asnOrg = data.connection ? (data.connection.org || data.connection.isp || '') : '';
+                var asnText = asn + (asnOrg ? ' \u2014 ' + asnOrg : '');
+                applyGeoToRow(row, cc, countryName, asnText || null);
+            });
+    });
+}());
+</script>

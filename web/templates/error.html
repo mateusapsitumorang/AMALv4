@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block title %}Error · CAPE Sandbox{% endblock %}
+{% block page_title %}Error{% endblock %}
 {% block content %}
     <div class="alert alert-danger"><b>ERROR :-(</b><br />{{error}}</div>
     {% if errors %}

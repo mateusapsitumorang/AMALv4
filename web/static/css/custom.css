@@ -1,0 +1,38 @@
+.fh-dashboard {
+  padding: 20px;
+}
+
+.fh-card {
+  border-radius: 14px;
+  color: #e2e8f0;
+}
+
+.fh-card h5 {
+  margin-bottom: 15px;
+}
+
+.fh-card .fh-status-up {
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.fh-card .fh-status-down {
+  color: #ef4444;
+  font-weight: bold;
+}
+
+.fh-card .fh-status-warning {
+  color: #facc15;
+  font-weight: bold;
+}
+
+/* ── Compact mode — diaktifkan via JS saat toggle display_compact ON ── */
+body.compact-mode .card { margin-bottom: 0.5rem !important; }
+body.compact-mode .card-body { padding: 0.5rem 0.75rem !important; }
+body.compact-mode .table td,
+body.compact-mode .table th { padding: 4px 8px !important; font-size: 0.8rem; }
+body.compact-mode .content-wrapper { padding-top: 6px; }
+body.compact-mode .px-3 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+body.compact-mode .py-3 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+body.compact-mode .mb-3 { margin-bottom: 0.4rem !important; }
+body.compact-mode .mb-4 { margin-bottom: 0.6rem !important; }

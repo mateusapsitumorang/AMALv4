@@ -1,0 +1,193 @@
+{% extends 'two_factor/_base.html' %}
+{% load i18n %}
+
+{% block content %}
+  <style>
+    /* Background  */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    body {
+      background-image: url('/static/img/Login_Backround.png') !important;
+      background-size: cover !important;
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      background-attachment: fixed !important;
+      background-color: #0f1117 !important;
+    }
+    
+    /* Card blur */
+    .card {
+      background: rgba(15, 17, 23, 0.5) !important;
+      backdrop-filter: blur(6px) !important;
+      -webkit-backdrop-filter: blur(6px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Gap antar field form */
+    .mb-3,
+    .form-group {
+      margin-bottom: 1.2rem !important;
+    }
+    
+    /* label */
+    label {
+      margin-bottom: 0.4rem !important;
+      font-size: 0.875rem;
+      color: var(--secondary) !important;
+    }
+    
+    /* Input height */
+    .form-control {
+      padding: 0.6rem 0.9rem !important;
+      font-size: 0.9rem !important;
+    }
+    .otp-box {
+      height: 3.5rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+      background-color: #fef08a; /* Warna kuning desainmu */
+      color: #000;
+      border-radius: 0.5rem;
+    }
+    .otp-box:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.25rem rgba(254, 240, 138, 0.4); /* Efek glow kuning saat diklik */
+    }
+  </style>
+  <div class="w-100 m-0 start-0 top-0 d-flex justify-content-center align-items-center flex-column position-absolute" style="min-height: 100vh;">
+    <div class="card shadow-lg border-0" style="max-width:420px; width:100%; border-radius:15px;">
+      <div class="card-body p-4">
+        <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+          <img src="{{ STATIC_URL }}img/BSSN.png" width="70" height="70" alt="Logo" style="object-fit: contain;" />
+          <h3 class="mb-0">{% trans 'Sign In to AMAL 4' %}</h3>
+        </div>
+        <div>
+          <p class="text-center text-muted small">If you have problems with your OTP device, you can contact your administrator</p>
+          <form method="post">
+            {% csrf_token %}
+
+            {% for field in form %}
+              <div class="mb-3 text-start">
+                {# Cek jika field ini adalah field otp_token #}
+                {% if field.name == 'otp_token' %}
+                  <label class="form-label text-white fw-bold">Enter OTP Code*</label>
+
+                  {# Hidden input tempat token asli disimpan #}
+                  <input type="hidden" name="{{ field.html_name }}" id="real-token-input" value="{{ field.value|default:'' }}" />
+
+                  {# 6 Kotak Input OTP #}
+                  <div class="d-flex flex-grow-1 justify-content-between gap-2 mt-2 mb-2">
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                    <input type="text" class="form-control text-center otp-box shadow-sm border" maxlength="1" inputmode="numeric" />
+                  </div>
+                {% endif %}
+
+                {# Menampilkan pesan error jika kode salah #}
+                {% if field.errors %}
+                  {% for error in field.errors %}
+                    <div class="text-danger" style="font-size: 0.8rem;">
+                      <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+                    </div>
+                  {% endfor %}
+                {% endif %}
+                {% if messages %}
+                  {% for message in messages %}
+                    {% if 'error' in message.tags %}
+                      <div class="text-danger" style="font-size: 0.8rem;">
+                        <i class="fa-solid fa-triangle-exclamation"></i> {{ message }}
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
+              </div>
+            {% endfor %}
+
+            <button type="submit" class="btn btn-primary w-100 mt-3 py-2 fw-bold">{% trans 'Verify OTP Code' %}</button>
+            {% comment %} Hidden logout for safety backward compatibility {% endcomment %}
+            <button type="submit" form="form-logout-hidden" class="btn btn-outline-secondary w-100 mt-2 py-2"><i class="fa-solid fa-arrow-left-long pe-2"></i>{% trans 'Back to Login' %}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  <form id="form-logout-hidden" method="post" action="{% url 'account_logout' %}" style="display:none;">
+    {% csrf_token %}
+  </form>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const otpBoxes = document.querySelectorAll('.otp-box')
+      const realInput = document.getElementById('real-token-input')
+    
+      if (otpBoxes.length > 0) {
+        // Fokus ke kotak pertama saat halaman dimuat
+        otpBoxes[0].focus()
+    
+        otpBoxes.forEach((box, index) => {
+          // Event saat mengetik angka
+          box.addEventListener('input', (e) => {
+            // Hanya izinkan angka
+            box.value = box.value.replace(/[^0-9]/g, '')
+    
+            // Pindah ke kotak berikutnya jika sudah diisi
+            if (box.value !== '' && index < otpBoxes.length - 1) {
+              otpBoxes[index + 1].focus()
+            }
+            updateRealInput()
+          })
+    
+          // Event saat hapus (Backspace)
+          box.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && box.value === '') {
+              if (index > 0) {
+                otpBoxes[index - 1].focus()
+              }
+            }
+          })
+    
+          // Fitur Paste (misal user copas kode "123456")
+          box.addEventListener('paste', (e) => {
+            e.preventDefault()
+            let pastedData = e.clipboardData
+              .getData('text')
+              .replace(/[^0-9]/g, '')
+              .slice(0, 6)
+    
+            for (let i = 0; i < pastedData.length; i++) {
+              if (otpBoxes[i]) {
+                otpBoxes[i].value = pastedData[i]
+              }
+            }
+    
+            // Pindahkan fokus ke kotak terakhir yang diisi
+            if (pastedData.length > 0) {
+              let focusIndex = Math.min(pastedData.length, 5)
+              otpBoxes[focusIndex].focus()
+              // Jika penuh 6 angka, fokus tetap di kotak terakhir
+              if (pastedData.length === 6) otpBoxes[5].focus()
+            }
+            updateRealInput()
+          })
+        })
+    
+        // Fungsi untuk menggabungkan 6 kotak jadi 1 string dan simpan di hidden input
+        function updateRealInput() {
+          let tokenStr = ''
+          otpBoxes.forEach((b) => (tokenStr += b.value))
+          realInput.value = tokenStr
+        }
+      }
+    })
+  </script>
+{% endblock %}

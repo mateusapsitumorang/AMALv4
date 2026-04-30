@@ -1,266 +1,1417 @@
 {% extends "base.html" %}
+{% block title %}Statistics · AMALV4 Sandbox{% endblock %}
+{% block page_title %}Detailed Statistics{% endblock %}
+
 {% block content %}
+<style>
+  #pageContent { opacity: 0; }
+</style>
+<div id="pageContent">
 {% if statistics %}
 
-<!-- Summary Card -->
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-chart-line me-2 text-info"></i>Statistics Overview</h5>
-    </div>
-    <div class="card-body">
-        <div class="row text-center">
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Timeframe</h6>
-                <h3 class="text-white">{{days}} <small class="text-white-50">days</small></h3>
-            </div>
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Total Tasks</h6>
-                <h3 class="text-white">{{statistics.total}}</h3>
-            </div>
-            <div class="col-md-4">
-                <h6 class="text-white-50 text-uppercase">Average per Day</h6>
-                <h3 class="text-white">{{statistics.average}}</h3>
-            </div>
+<div id="djData" style="display:none;"
+  data-days="{{ days }}"
+  data-total="{{ statistics.total|default:0 }}"
+  data-average="{{ statistics.average|default:'0' }}"
+></div>
+
+<!-- ═══════════════════ HERO CARDS ════════════════════════════ -->
+<div class="row g-4 mb-4">
+  <div class="col-md-4 sc-item" data-si="0">
+    <div class="stat-hero-card card border-0 h-100 shadow-lg position-relative overflow-hidden">
+      <div class="stat-card-glow" style="--gc:rgba(99,179,237,.18);"></div>
+      <div class="card-body d-flex flex-column justify-content-between p-4">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <p class="stat-label text-uppercase mb-1">Analysis Timeframe</p>
+            <h1 class="stat-value text-info mb-0">
+              <span id="herodays">{{ days }}</span> <small class="fs-5 text-muted">days</small>
+            </h1>
+          </div>
+          <div class="stat-icon-wrap rounded-3 p-3">
+            <i class="fas fa-history text-info fs-4"></i>
+          </div>
         </div>
+        <div class="mt-3">
+          <div class="progress" style="height:3px;background:rgba(255,255,255,.05);">
+            <div class="progress-bar bg-info w-100"></div>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <div class="col-md-4 sc-item" data-si="1">
+    <div class="stat-hero-card card border-0 h-100 shadow-lg position-relative overflow-hidden">
+     <div class="stat-card-glow" style="--gc: rgba(236, 201, 75, 0.18);"></div>
+      <div class="card-body d-flex flex-column justify-content-between p-4">
+        <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <p class="stat-label text-uppercase mb-1">Total Tasks</p>
+            <h1 class="stat-value text-warning mb-0" id="heroTotal">{{ statistics.total|default:0 }}</h1>
+        </div>
+        <div class="stat-icon-wrap rounded-3 p-3">
+            <i class="fas fa-tasks text-warning fs-4"></i>
+        </div>
+        </div>
+        <div class="mt-3">
+        <span class="badge" style="background: rgba(236, 201, 75, 0.15); color: #ecc94b;">
+            Processed in {{ days }} days
+        </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4 sc-item" data-si="2">
+    <div class="stat-hero-card card border-0 h-100 shadow-lg position-relative overflow-hidden">
+      <div class="stat-card-glow" style="--gc:rgba(72,187,120,.18);"></div>
+      <div class="card-body d-flex flex-column justify-content-between p-4">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <p class="stat-label text-uppercase mb-1">Avg Daily Load</p>
+            <h1 class="stat-value text-success mb-0" id="heroAvg">{{ statistics.average|default:"0.00" }}</h1>
+          </div>
+          <div class="stat-icon-wrap rounded-3 p-3">
+            <i class="fas fa-chart-line text-success fs-4"></i>
+          </div>
+        </div>
+        <div class="mt-3">
+          <span class="badge" style="background:rgba(72,187,120,.15);color:#68d391;">tasks / day average</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- Top Detections -->
-{% if statistics.detections %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-bug me-2 text-danger"></i>Top Detections</h5>
-    </div>
-    <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-center align-items-center">
-        {% for block in statistics.detections.items %}
-            {% if block.family %}
-            <a href="/analysis/search/detections:{{block.family}}" class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
-                <span class="badge bg-danger me-2 p-2">{{block.total}}</span>
-                <span class="font-weight-bold" style="font-size: 1rem;">{{block.family}}</span>
-            </a>
-            {% endif %}
-        {% endfor %}
+<!-- ═══════════ ROW 1 — THROUGHPUT + OUTCOME DONUT ════════════ -->
+<div class="row g-4 mb-4 sc-section">
+  <div class="col-lg-8">
+    <div class="card bg-dark border-secondary shadow-sm h-100">
+      <div class="card-header bg-transparent border-secondary py-3 d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 text-white"><i class="fas fa-calendar-alt me-2 text-success"></i>Daily Analysis Throughput</h5>
+        <div class="btn-group btn-group-sm" id="chartToggle">
+          <button class="btn btn-outline-secondary btn-sm active" data-mode="bar" onclick="switchChart('bar',this)">Bar</button>
+          <button class="btn btn-outline-secondary btn-sm" data-mode="line" onclick="switchChart('line',this)">Line</button>
         </div>
+      </div>
+      <div class="card-body pb-2">
+        <canvas id="throughputChart" height="110"></canvas>
+      </div>
     </div>
-</div>
-{% endif %}
+  </div>
 
-<!-- Top ASN -->
-{% if statistics.asns %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-network-wired me-2 text-warning"></i>Top ASNs</h5>
-    </div>
-    <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-center align-items-center">
-        {% for block in statistics.asns %}
-            {% if block.asn %}
-            <a href="/analysis/search/asn:{{block.asn}}" class="btn btn-outline-secondary m-2 d-flex align-items-center text-light" style="border-color: #444;">
-                <span class="badge bg-warning me-2 p-2">{{block.total}}</span>
-                <span class="font-weight-bold" style="font-size: 1rem;">{{block.asn}}</span>
-            </a>
-            {% endif %}
-        {% endfor %}
+  <div class="col-lg-4">
+    <div class="card bg-dark border-secondary shadow-sm h-100">
+      <div class="card-header bg-transparent border-secondary py-3">
+        <h5 class="mb-0 text-white"><i class="fas fa-chart-pie me-2 text-warning"></i>Task Outcomes</h5>
+      </div>
+      <div class="card-body d-flex flex-column align-items-center justify-content-center">
+        <div class="position-relative" style="width:190px;height:190px;">
+          <canvas id="outcomeDonut" width="190" height="190"></canvas>
+          <div class="position-absolute top-50 start-50 translate-middle text-center" style="pointer-events:none;">
+            <div class="fw-bold fs-4 text-white" id="donutTotal">—</div>
+            <div class="small text-muted">total</div>
+          </div>
         </div>
+        <div class="mt-3 w-100" id="outcomeLegend"></div>
+      </div>
     </div>
+  </div>
 </div>
-{% endif %}
-
-<!-- Tasks per Day -->
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-calendar-alt me-2 text-success"></i>Tasks per Day</h5>
+<!-- ═════════════ ACTIVITY HEATMAP ═══════════════════════════ -->
+<div class="card border-0 shadow-sm mb-4 sc-section">
+  <div class="card-header bg-transparent border-secondary py-3 d-flex align-items-center justify-content-between">
+    <h5 class="mb-0 text-white">
+      <i class="fas fa-th me-2" style="color:#b794f4;"></i>Activity Heatmap
+      <small class="text-muted fs-6 ms-1">(tasks added per day)</small>
+    </h5>
+    <div class="d-flex align-items-center gap-2">
+      <span class="small text-muted">Less</span>
+      <div style="width:80px;height:10px;border-radius:4px;background:linear-gradient(90deg,#0d1b2a,#1a4a7a,#2879c0,#3ab5ff);"></div>
+      <span class="small text-muted">More</span>
     </div>
-    <div class="table-responsive">
-        <table class="table table-dark table-striped table-hover mb-0">
-            <thead class="thead-dark">
-              <tr>
-                <th scope="col" class="border-top-0">Day</th>
-                <th scope="col" class="border-top-0 text-end">Added</th>
-                <th scope="col" class="border-top-0 text-end">Reported</th>
-                <th scope="col" class="border-top-0 text-end">Failed</th>
-              </tr>
-            </thead>
-            <tbody>
-            {% for day, block in statistics.tasks.items %}
-                <tr>
-                    <th scope="row" class="text-light">{{day}}</th>
-                    <td class="text-end"><span class="badge bg-dark">{{block.added}}</span></td>
-                    <td class="text-end"><span class="badge bg-success">{{block.reported}}</span></td>
-                    <td class="text-end"><span class="badge bg-danger">{{block.failed}}</span></td>
-                </tr>
+  </div>
+  <div class="card-body"><div id="activityHeatmap" class="d-flex flex-wrap gap-1"></div></div>
+</div>
+
+
+<!-- ════════════ ROW 2 — FAMILIES + ASNs ═════════════════════ -->
+<div class="row g-4 mb-4 sc-section">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-transparent border-secondary py-3 d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 text-white"><i class="fas fa-bug me-2 text-danger"></i>Top Malware Families</h5>
+        {% if statistics.detections %}
+          <span class="badge" style="background:rgba(245,101,101,.15);color:#fc8181;">{{ statistics.detections|length }} families</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if statistics.detections %}
+          <canvas id="familyChart" class="mb-3"></canvas>
+          <hr class="border-secondary my-3">
+          <p class="small text-muted mb-2">All detected families — click to search:</p>
+          <div class="d-flex flex-wrap gap-2">
+            {% for block in statistics.detections %}
+              {% if block.family %}
+                <a href="/analysis/search/detections:{{ block.family }}" class="btn btn-sm btn-outline-secondary d-flex align-items-center">
+                  <span class="badge bg-danger me-2">{{ block.total }}</span>
+                  <span class="fw-bold">{{ block.family }}</span>
+                </a>
+              {% endif %}
             {% endfor %}
-            </tbody>
-        </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-5">
+            <i class="fas fa-check-circle fs-2 d-block mb-2 text-success"></i>No detections recorded.
+          </div>
+        {% endif %}
+      </div>
     </div>
-</div>
+  </div>
 
-<!-- Custom Stats -->
-{% if statistics.custom_statistics %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-cogs me-2 text-primary"></i>Custom Signatures (Volatility/Static)</h5>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-dark table-striped table-hover mb-0">
-            <thead class="thead-dark">
-              <tr>
-                <th scope="col" class="border-top-0">Name</th>
-                <th scope="col" class="border-top-0 text-end">Total Time (min)</th>
-                <th scope="col" class="border-top-0 text-end">Runs</th>
-                <th scope="col" class="border-top-0 text-end">Extracted</th>
-                <th scope="col" class="border-top-0 text-end">Avg Time (min)</th>
-              </tr>
-            </thead>
-            <tbody>
-            {% for name, time in statistics.custom_statistics.items %}
-                <tr>
-                    <td>{{name}}</td>
-                    <td class="text-end">{{time.total}}</td>
-                    <td class="text-end">{{time.runs}}</td>
-                    <td class="text-end">{{time.successful}}</td>
-                    <td class="text-end">{{time.average}}</td>
-                </tr>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-transparent border-secondary py-3 d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 text-white"><i class="fas fa-globe me-2 text-warning"></i>Top ASNs</h5>
+        {% if statistics.asns %}
+          <span class="badge" style="background:rgba(246,173,85,.15);color:#f6ad55;">{{ statistics.asns|length }} ASNs</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if statistics.asns %}
+          <canvas id="asnChart" class="mb-3"></canvas>
+          <hr class="border-secondary my-3">
+          <p class="small text-muted mb-2">All observed ASNs — click to search:</p>
+          <div class="d-flex flex-wrap gap-2">
+            {% for block in statistics.asns %}
+              {% if block.asn %}
+                <a href="/analysis/search/asn:{{ block.asn }}" class="btn btn-sm btn-outline-secondary d-flex align-items-center">
+                <span class="badge bg-warning text-black me-2" style="color: #000 !important;">{{ block.total }}</span>
+                <span class="fw-bold">{{ block.asn }}</span>
+                </a>
+              {% endif %}
             {% endfor %}
-            </tbody>
-        </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-5">
+            <i class="fas fa-network-wired fs-2 d-block mb-2"></i>No network data.
+          </div>
+        {% endif %}
+      </div>
     </div>
-</div>
-{% endif %}
-
-<!-- Module Performance -->
-<div class="row">
-    {% if statistics.processing %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-microchip me-2 text-info"></i>Processing</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.processing.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if statistics.signatures %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-file-signature me-2 text-warning"></i>Signatures</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.signatures.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if statistics.reporting %}
-    <div class="col-lg-4 mb-4">
-        <div class="card bg-dark shadow-sm border-secondary h-100">
-            <div class="card-header border-secondary bg-transparent">
-                <h5 class="mb-0 text-white"><i class="fas fa-file-alt me-2 text-success"></i>Reporting</h5>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-dark table-sm table-striped table-hover mb-0">
-                  <thead class="thead-dark">
-                    <tr>
-                      <th class="border-top-0">Name</th>
-                      <th class="border-top-0 text-end">Total</th>
-                      <th class="border-top-0 text-end">Runs</th>
-                      <th class="border-top-0 text-end">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {% for name, time in statistics.reporting.items %}
-                      <tr>
-                          <td class="text-truncate" style="max-width: 120px;" title="{{name}}">{{name}}</td>
-                          <td class="text-end">{{time.total}}</td>
-                          <td class="text-end">{{time.runs}}</td>
-                          <td class="text-end">{{time.average}}</td>
-                      </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+  </div>
 </div>
 
-{% else %}
-    <div class="alert alert-info text-center shadow-sm">
-        <i class="fas fa-info-circle fa-2x mb-3"></i>
-        <p>No statistics found.</p>
-    </div>
-{% endif %}
-
-<!-- Cluster Details -->
-{% if statistics.distributed_tasks %}
-<div class="card bg-dark shadow-sm border-secondary mb-4">
-    <div class="card-header border-secondary bg-transparent">
-        <h5 class="mb-0 text-white"><i class="fas fa-server me-2 text-primary"></i>Cluster Details</h5>
+<!-- ═══════════ ANALYSIS STATES ══════════════════════════════ -->
+<div class="card bg-dark border-secondary shadow-sm mb-4">
+    <div class="card-header bg-transparent border-secondary py-3">
+        <div class="d-flex align-items-center">
+            <h5 class="mb-0 text-white">
+                <i class="fas fa-tasks me-2 text-info"></i>Analysis States
+            </h5>
+        </div>
     </div>
     <div class="card-body">
-        <div class="row">
-            {% for day, block in statistics.distributed_tasks.items %}
-            <div class="col-md-3 mb-3">
-                <div class="card bg-dark text-white h-100 border-0">
-                    <div class="card-header font-weight-bold">{{day}}</div>
-                    <ul class="list-group list-group-flush text-dark">
-                        {% for name, tasks in block.items %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            {{name}}
-                            <span class="badge bg-primary rounded-pill">{{tasks}}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+            {% for state, count in statistics.states_count.items %}
+            <div class="p-3 rounded border border-secondary d-flex align-items-center gap-3" 
+                 style="background: rgba(255,255,255,0.03); flex: 1 1 calc(20% - 12px); min-width: 160px;">
+                
+                {% if state == 'reported' %}
+                    <i class="fas fa-check-circle text-success fs-4"></i>
+                {% elif state == 'recovered' %}
+                    <i class="fas fa-redo text-success fs-4"></i>
+                {% elif state == 'running' %}
+                    <i class="fas fa-spinner fa-spin text-primary fs-4"></i>
+                {% elif state == 'pending' %}
+                    <i class="fas fa-clock text-secondary fs-4"></i>
+                {% elif state == 'completed' %}
+                    <i class="fas fa-cog text-info fs-4"></i>
+                {% elif state == 'distributed' %}
+                    <i class="fas fa-network-wired fs-4" style="color:#a78bfa;"></i>
+                {% elif state == 'failed_analysis' %}
+                    <i class="fas fa-flask text-danger fs-4"></i>
+                {% elif state == 'failed_processing' %}
+                    <i class="fas fa-microchip text-danger fs-4"></i>
+                {% elif state == 'failed_reporting' %}
+                    <i class="fas fa-file-excel text-danger fs-4"></i>
+                {% else %}
+                    <i class="fas fa-question-circle text-warning fs-4"></i>
+                {% endif %}
+
+                <div class="flex-grow-1 min-w-0">
+                    <div class="text-muted small text-truncate">{{ state|title }}</div>
+                    <div class="fw-bold fs-5 text-white">{{ count }}</div>
                 </div>
             </div>
             {% endfor %}
         </div>
     </div>
 </div>
+
+
+<!-- ═══════════ ROW 4 — MODULE PERFORMANCE ═══════════════════ -->
+<div class="row g-4 mb-4 sc-section">
+  <!-- Processing -->
+  <div class="col-xl-4 col-md-6">
+    <div class="card bg-dark border-secondary h-100">
+      <div class="card-header bg-transparent border-secondary py-3">
+        <h5 class="mb-0 fw-bold text-white">
+    <i class="fas fa-microchip me-2" style="color:#63b3ed;"></i>Processing Engine
+    </h5>
+      </div>
+      <div class="card-body pb-2">
+        {% if statistics.processing %}
+          <canvas id="processingBar" height="180"></canvas>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-hover mb-0 small">
+              <thead><tr>
+                <th class="ps-2 border-secondary text-muted">Module</th>
+                <th class="text-end border-secondary text-muted">Avg (s)</th>
+                <th class="text-end pe-2 border-secondary text-muted">Runs</th>
+              </tr></thead>
+              <tbody>
+              {% for name, time in statistics.processing.items %}
+                <tr>
+                  <td class="ps-2 text-white">{{ name }}</td>
+                  <td class="text-end text-muted">{{ time.average }}s</td>
+                  <td class="text-end pe-2" style="color:#63b3ed;">{{ time.runs }}×</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-4 small"><i class="fas fa-inbox d-block fs-3 mb-2 opacity-30"></i>No processing data.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Signature Matching -->
+  <div class="col-xl-4 col-md-6">
+    <div class="card bg-dark border-secondary h-100">
+      <div class="card-header bg-transparent border-secondary py-3">
+        <h5 class="mb-0 fw-bold" ><i class="fas fa-file-signature me-2" style="color:#f6ad55;"></i>Signature Matching</h5>
+      </div>
+      <div class="card-body pb-2">
+        {% if statistics.signatures %}
+          <canvas id="signaturesBar" height="180"></canvas>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-hover mb-0 small">
+              <thead><tr>
+                <th class="ps-2 border-secondary text-muted">Signature</th>
+                <th class="text-end border-secondary text-muted">Avg (s)</th>
+                <th class="text-end pe-2 border-secondary text-muted">Runs</th>
+              </tr></thead>
+              <tbody>
+              {% for name, time in statistics.signatures.items %}
+                <tr>
+                  <td class="ps-2 text-white">{{ name }}</td>
+                  <td class="text-end text-muted">{{ time.average }}s</td>
+                  <td class="text-end pe-2" style="color:#f6ad55;">{{ time.runs }}×</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% elif statistics.custom_statistics %}
+          <canvas id="signaturesBar" height="180"></canvas>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-hover mb-0 small">
+              <thead><tr>
+                <th class="ps-2 border-secondary text-muted">Signature</th>
+                <th class="text-end border-secondary text-muted">Avg (s)</th>
+                <th class="text-end pe-2 border-secondary text-muted">Runs</th>
+              </tr></thead>
+              <tbody>
+              {% for name, time in statistics.custom_statistics.items %}
+                <tr>
+                  <td class="ps-2 text-white">{{ name }}</td>
+                  <td class="text-end text-muted">{{ time.average }}</td>
+                  <td class="text-end pe-2" style="color:#f6ad55;">{{ time.runs }}×</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <!-- Throughput-based fallback chart — always renders -->
+          <canvas id="signaturesBar" height="180"></canvas>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-hover mb-0 small">
+              <thead><tr>
+                <th class="ps-2 border-secondary text-muted">Category</th>
+                <th class="text-end border-secondary text-muted">Tasks</th>
+                <th class="text-end pe-2 border-secondary text-muted">Rate</th>
+              </tr></thead>
+              <tbody id="sigFallbackBody"></tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Reporting -->
+  <div class="col-xl-4 col-md-12">
+    <div class="card bg-dark border-secondary-0 h-100">
+      <div class="card-header bg-transparent border-secondary py-3">
+        <h5 class="mb-0 fw-bold" ><i class="fas fa-file-alt me-2" style="color:#68d391;"></i>Reporting &amp; Export</h5>
+      </div>
+      <div class="card-body pb-2">
+        {% if statistics.reporting %}
+          <canvas id="reportingBar" height="180"></canvas>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-hover mb-0 small">
+              <thead><tr>
+                <th class="ps-2 border-secondary text-muted">Reporter</th>
+                <th class="text-end border-secondary text-muted">Avg (s)</th>
+                <th class="text-end pe-2 border-secondary text-muted">Runs</th>
+              </tr></thead>
+              <tbody>
+              {% for name, time in statistics.reporting.items %}
+                <tr>
+                  <td class="ps-2 text-white">{{ name }}</td>
+                  <td class="text-end text-muted">{{ time.average }}s</td>
+                  <td class="text-end pe-2" style="color:#68d391;">{{ time.runs }}×</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-4 small"><i class="fas fa-inbox d-block fs-3 mb-2 opacity-30"></i>No reporting data.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ROW 6 — CUSTOM SIGNATURES ════════════════════ -->
+{% if statistics.custom_statistics %}
+<div class="card bg-dark border-secondary shadow-sm mb-4 sc-section">
+  <div class="card-header bg-transparent border-secondary py-3 d-flex align-items-center justify-content-between">
+    <h5 class="mb-0 text-white"><i class="fas fa-cogs me-2 text-primary"></i>Custom Signatures</h5>
+    <span class="badge" style="background:rgba(100,149,237,.15);color:#6495ed;" id="sigTotalBadge">
+      {{ statistics.custom_statistics|length }} signatures
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0 small align-middle" id="sigTable">
+      <thead style="background:rgba(255,255,255,.05);">
+        <tr>
+          <th class="ps-4 border-secondary text-muted">Name</th>
+          <th class="text-end border-secondary text-muted">Total Time</th>
+          <th class="text-center border-secondary text-muted">Runs</th>
+          <th class="text-center border-secondary text-muted">Extracted</th>
+          <th class="text-end pe-4 border-secondary text-muted">Avg Time</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for name, time in statistics.custom_statistics.items %}
+        <tr class="sig-row" style="display: none;">
+          <td class="ps-4 text-white fw-semibold">
+            <i class="fas fa-fingerprint me-2 opacity-50 text-warning"></i>{{ name }}
+          </td>
+          <td class="text-end text-muted">{{ time.total }}</td>
+          <td class="text-center">
+            <span class="badge" style="background:rgba(99,179,237,.2);color:#63b3ed;">{{ time.runs }}</span>
+          </td>
+          <td class="text-center">
+            <span class="badge" style="background:rgba(72,187,120,.2);color:#68d391;">{{ time.successful|default:"0" }}</span>
+          </td>
+          <td class="text-end pe-4 text-muted">{{ time.average }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="card-footer bg-transparent border-secondary py-3 d-flex justify-content-between align-items-center">
+    <span class="small text-muted" id="sigPageInfo">Showing 1 to 10 of 0 entries</span>
+    <div class="btn-group">
+      <button class="btn btn-sm btn-outline-secondary text-white" id="btnPrevSig" onclick="prevSigPage()"><i class="fas fa-chevron-left me-1"></i> Prev</button>
+      <button class="btn btn-sm btn-outline-secondary text-white" id="btnNextSig" onclick="nextSigPage()">Next <i class="fas fa-chevron-right ms-1"></i></button>
+    </div>
+  </div>
+</div>
 {% endif %}
 
-{% endblock %}
+
+<!-- ═══════════ ROW 5 — DISTRIBUTED NODES ═══════════════════ -->
+{% if statistics.distributed_tasks %}
+<div class="card bg-dark shadow-sm border-secondary mb-4">
+  <div class="card-header border-secondary bg-transparent">
+    <h5 class="mb-0 text-white"><i class="fas fa-server me-2 text-primary"></i>Cluster Details</h5>
+  </div>
+  <div class="card-body">
+    
+    <canvas id="nodeChart" height="150" class="mb-4 w-100"></canvas>
+    
+    <div class="row">
+      {% for day, block in statistics.distributed_tasks.items %}
+        <div class="col-md-3 mb-3">
+          <div class="card bg-dark text-white h-100 border-secondary">
+            <div class="card-header fw-bold border-secondary">{{ day }}</div>
+            <ul class="list-group list-group-flush">
+              {% for name, tasks in block.items %}
+                <li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center border-secondary">
+                  {{ name }}
+                  <span class="badge bg-primary rounded-pill">{{ tasks }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+<!-- ═══════════ SYSTEM HEALTH DETAILS ═══════════════════ -->
+<div class="card bg-dark shadow-sm border-secondary mb-4" id="alert-details">
+  <div class="card-header border-secondary bg-transparent d-flex align-items-center justify-content-between">
+    <h5 class="mb-0 text-white">
+      <i class="fas fa-heartbeat me-2" style="color:#f56565;"></i>System Health Details
+    </h5>
+  </div>
+  <div class="card-body">
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div id="statCpuCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);
+     border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+      <div id="statCpuLabel" style="color:#ed6b60;font-size:0.62rem;font-weight:700;
+                  letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">
+        CPU Usage
+      </div>
+      <div style="font-size:2rem;font-weight:800;color:#fff;line-height:1;"
+           id="statCpuValue">—</div>
+      <div style="margin-top:10px;position:relative;width:100%;height:58px;">
+        <canvas id="cpuSparkline" role="img" aria-label="CPU sparkline"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div id="statMemCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);
+     border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+      <div id="statMemLabel" style="color:#fed71f;font-size:0.62rem;font-weight:700;
+                  letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">
+        Memory Usage
+      </div>
+      <div style="font-size:2rem;font-weight:800;color:#fff;line-height:1;"
+           id="statMemValue">—</div>
+      <div style="margin-top:10px;position:relative;width:100%;height:58px;">
+        <canvas id="memSparkline" role="img" aria-label="Memory sparkline"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div id="statDiskCard" class="p-3 rounded" style="border:1px solid rgba(48,178,45,0.25);
+     border-left:3px solid #30b22d;background:rgba(48,178,45,0.03);">
+      <div id="statDiskLabel" style="color:#f56565;font-size:0.62rem;font-weight:700;
+                  letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">
+        Disk Usage
+      </div>
+      <div style="font-size:2rem;font-weight:800;color:#fff;line-height:1;"
+           id="statDiskValue">—</div>
+      <div style="margin-top:10px;position:relative;width:100%;height:58px;">
+        <canvas id="diskSparkline" role="img" aria-label="Disk sparkline"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+    <!-- Top Processes — grid -->
+<div class="mb-4">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <span style="font-size:0.7rem;font-weight:700;letter-spacing:.12em;
+                 text-transform:uppercase;">
+      <i class="fas fa-microchip me-2" style="color:#6384ff;"></i>Top Processes
+    </span>
+    <span class="badge" id="procCount"
+          style="background:rgba(99,132,255,0.12);color:#fffff;font-size:0.6rem;">—</span>
+  </div>
+  <div id="topProcessGrid"
+       style="display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:10px;">
+    <div class="text-muted small">Loading...</div>
+  </div>
+</div>
+
+    <!-- Recent System Alerts -->
+    <div>
+      <h6 class="text-white mb-3 small text-uppercase" style="letter-spacing:.08em;">
+        <i class="fas fa-clock me-2 opacity-50"></i>Recent System Alerts
+      </h6>
+      <div id="statRecentAlerts">
+        <p class="text-muted small">No recent alerts</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="text-center py-5">
+  <div style="width:80px;height:80px;background:rgba(113,128,150,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+    <i class="fas fa-database fa-2x text-muted"></i>
+  </div>
+  <h4 class="text-white mb-2">No Statistics Data Found</h4>
+  <p class="text-muted mb-4">The database doesn't have any analysis records for the selected timeframe.</p>
+  <a href="/" class="btn btn-primary px-4">Back to Dashboard</a>
+</div>
+{% endif %}
+</div>
+
+
+<!-- ═══════════════════════ STYLES ════════════════════════════ -->
+<style>
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+}
+.chart-wrap--sm  { height: 220px; }
+.chart-wrap--md  { height: 300px; }
+.chart-wrap--lg  { height: 360px; }
+
+.card-body {
+    position: relative;
+}
+.stat-hero-card, .stat-card {
+  background: linear-gradient(135deg,#0f1923 0%,#141e2b 100%) !important;
+  border: 1px solid rgba(255,255,255,.07) !important;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.stat-hero-card:hover, .stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(0,0,0,.45) !important;
+}
+.stat-card-glow {
+  position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at top left, var(--gc), transparent 65%);
+}
+.stat-label  { font-size:.70rem;letter-spacing:.12em;color:#6b7fa3; }
+.stat-value  { font-size:2.4rem;font-weight:800;line-height:1; }
+.stat-icon-wrap { display:flex;align-items:center;justify-content:center; }
+.state-card {
+  flex: 1 1 calc(20% - 12px);
+  min-width: 140px;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.state-card:hover { transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.hm-cell {
+  width:14px;height:14px;border-radius:3px;
+  position:relative;cursor:default;transition:transform .12s;
+}
+
+#chartToggle .btn {
+  background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12);
+  color:#6b7fa3;transition:all .2s;
+}
+#chartToggle .btn.active { background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25); }
+#chartToggle .btn:hover:not(.active) { background:rgba(255,255,255,.07);color:#cbd5e0; }
+.table-hover tbody tr:hover { background-color:rgba(255,255,255,.03) !important; }
+.sc-section.sc-hidden {
+    opacity: 0;
+    transform: translateY(15px);
+}
+@keyframes hPulse {
+  0%,100% { opacity:1; }
+  50%      { opacity:.3; }
+}
+.proc-card {
+  padding: 10px 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.015);
+  transition: background .2s;
+}
+.proc-card:hover { background: rgba(99,132,255,0.06); }
+.proc-bar { height:3px;border-radius:2px;margin-top:4px;background:rgba(255,255,255,0.06);overflow:hidden; }
+.proc-bar-fill { height:100%;border-radius:2px;transition:width .45s ease; }
+
+@keyframes shlive {
+  0%,100% { opacity:1; }
+  50%      { opacity:.35; }
+}
+</style>
+
+<!-- ═══════════════════════ SCRIPTS ══════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+/* ─── Chart defaults ─────────────────────────────────────── */
+Chart.defaults.color       = '#6b7fa3';
+Chart.defaults.borderColor = 'rgba(255,255,255,.05)';
+Chart.defaults.font.family = "'Segoe UI','Helvetica Neue',sans-serif";
+const TTP = {
+  backgroundColor:'#1a2535',borderColor:'rgba(255,255,255,.1)',
+  borderWidth:1,padding:10,titleColor:'#e2e8f0',bodyColor:'#9aa5b4',
+};
+const staggerDelay = {
+  id:'staggerDelay',
+  beforeUpdate(chart){
+    chart.data.datasets.forEach((ds,di)=>{
+      ds.animation={ delay:(ctx)=>di*120+ctx.dataIndex*40, duration:800, easing:'easeOutQuart' };
+    });
+  }
+};
+
+/* ─── Read from rendered DOM table (primary source) ─────── */
+const ROWS = Array.from(document.querySelectorAll('#throughputTable tbody tr'));
+const DAYS_DATA = { labels:[], added:[], reported:[], failed:[] };
+ROWS.forEach(row => {
+  DAYS_DATA.labels.push(row.dataset.date    || '');
+  DAYS_DATA.added.push(   parseInt(row.dataset.added    ||0,10));
+  DAYS_DATA.reported.push(parseInt(row.dataset.reported ||0,10));
+  DAYS_DATA.failed.push(  parseInt(row.dataset.failed   ||0,10));
+});
+
+/* Django-template fallback when table not rendered */
+{% if statistics.tasks %}
+if (DAYS_DATA.labels.length === 0) {
+  {% for day, block in statistics.tasks.items %}
+  DAYS_DATA.labels.push("{{ day }}");
+  DAYS_DATA.added.push({{ block.added|default:0 }});
+  DAYS_DATA.reported.push({{ block.reported|default:0 }});
+  DAYS_DATA.failed.push({{ block.failed|default:0 }});
+  {% endfor %}
+}
+{% endif %}
+
+/* ─── Sort data from oldest to newest ────────────────────── */
+if (DAYS_DATA.labels.length > 0) {
+  const sortedIndices = DAYS_DATA.labels
+    .map((label, index) => ({ label: new Date(label), index }))
+    .sort((a, b) => a.label - b.label)
+    .map(item => item.index);
+  
+  DAYS_DATA.labels = sortedIndices.map(i => DAYS_DATA.labels[i]);
+  DAYS_DATA.added = sortedIndices.map(i => DAYS_DATA.added[i]);
+  DAYS_DATA.reported = sortedIndices.map(i => DAYS_DATA.reported[i]);
+  DAYS_DATA.failed = sortedIndices.map(i => DAYS_DATA.failed[i]);
+}
+
+const totalAdded    = DAYS_DATA.added.reduce((a,b)=>a+b, 0);
+const totalReported = DAYS_DATA.reported.reduce((a,b)=>a+b, 0);
+const totalFailed   = DAYS_DATA.failed.reduce((a,b)=>a+b, 0);
+const numDays       = parseInt("{{ days }}", 10) || 7;
+
+/* ─── Hero number animation ──────────────────────────────── */
+(function(){
+  function animCount(el, target) {
+    if (!el) return;
+    if (target === 0) { el.textContent = '0'; return; }
+    let cur=0;
+    const step=Math.max(1,Math.ceil(target/60));
+    const tick=setInterval(()=>{
+      cur=Math.min(cur+step,target);
+      el.textContent=cur.toLocaleString();
+      if(cur>=target)clearInterval(tick);
+    },22);
+  }
+  const heroTotal = document.getElementById('heroTotal');
+  const heroAvg   = document.getElementById('heroAvg');
+
+  const backendTotal = parseInt((heroTotal&&heroTotal.textContent.replace(/\D/g,''))||'0',10)||0;
+  animCount(heroTotal, Math.max(backendTotal, totalAdded));
+
+  if (heroAvg) {
+    const backendAvg = parseFloat(heroAvg.textContent)||0;
+    const domAvg     = numDays>0 ? totalAdded/numDays : 0;
+    heroAvg.textContent = (backendAvg>0 ? backendAvg : domAvg).toFixed(2);
+  }
+})();
+
+/* ─── Analysis States grid ───────────────────────────────── */
+(function(){
+  const pending = Math.max(0, totalAdded-totalReported-totalFailed);
+  const sr      = totalAdded>0 ? Math.round(totalReported/totalAdded*100) : 0;
+  const badge   = document.getElementById('statesBadge');
+  if (badge) badge.textContent = totalAdded.toLocaleString()+' total tasks';
+
+  const states = [
+    {icon:'fa-tasks',        color:'#63b3ed',bg:'rgba(99,179,237,.12)', label:'Total Added', value:totalAdded},
+    {icon:'fa-check-circle', color:'#48bb78',bg:'rgba(72,187,120,.12)', label:'Reported',    value:totalReported},
+    {icon:'fa-times-circle', color:'#f56565',bg:'rgba(245,101,101,.12)',label:'Failed',      value:totalFailed},
+    {icon:'fa-clock',        color:'#a0aec0',bg:'rgba(160,174,192,.12)',label:'Pending',     value:pending},
+    {icon:'fa-chart-bar',    color:'#f6ad55',bg:'rgba(246,173,85,.12)', label:'Success Rate',value:sr+'%'},
+  ];
+  const grid = document.getElementById('statesGrid');
+  if (!grid) return;
+  grid.innerHTML = states.map(s=>`
+    <div class="state-card p-3 rounded d-flex align-items-center gap-3" style="background:${s.bg};">
+      <i class="fas ${s.icon} fs-2" style="color:${s.color};min-width:28px;text-align:center;"></i>
+      <div>
+        <div class="text-muted small text-uppercase" style="letter-spacing:.08em;">${s.label}</div>
+        <div class="fw-bold fs-4 text-white lh-1 mt-1">${typeof s.value==='number'?s.value.toLocaleString():s.value}</div>
+      </div>
+    </div>`).join('');
+})();
+
+/* ─── Throughput chart ───────────────────────────────────── */
+let throughputChart;
+function buildThroughputChart(type) {
+    if (throughputChart) throughputChart.destroy();
+    
+    const isBar = type === 'bar';
+    const ctx = document.getElementById('throughputChart').getContext('2d');
+    
+    throughputChart = new Chart(ctx, {
+        type: type, 
+        data: {
+            labels: DAYS_DATA.labels,
+            datasets: [
+                {
+                    label: 'Added',    
+                    data: DAYS_DATA.added,
+                    backgroundColor: isBar ? 'rgba(100,149,237,.5)' : 'rgba(100,149,237,.1)',
+                    borderColor: '#6495ed',
+                    borderWidth: 2,
+                    fill: !isBar,
+                    tension: 0.4,
+                    pointRadius: isBar ? 0 : 4,
+                    borderRadius: isBar ? 4 : 0
+                },
+                {
+                    label: 'Reported', 
+                    data: DAYS_DATA.reported,
+                    backgroundColor: isBar ? 'rgba(72,187,120,.5)' : 'rgba(72,187,120,.1)',
+                    borderColor: '#48bb78',
+                    borderWidth: 2,
+                    fill: !isBar,
+                    tension: 0.4,
+                    pointRadius: isBar ? 0 : 4,
+                    borderRadius: isBar ? 4 : 0
+                },
+                {
+                    label: 'Failed',   
+                    data: DAYS_DATA.failed,
+                    backgroundColor: isBar ? 'rgba(245,101,101,.5)' : 'rgba(245,101,101,.1)',
+                    borderColor: '#f56565',
+                    borderWidth: 2,
+                    fill: !isBar,
+                    tension: 0.4,
+                    pointRadius: isBar ? 0 : 4,
+                    borderRadius: isBar ? 4 : 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false, 
+            resizeDelay: 50, 
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { color: '#9aa5b4' } },
+                tooltip: TTP
+            },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7fa3' } },
+                y: { 
+                    grid: { color: 'rgba(255,255,255,.04)' }, 
+                    ticks: { color: '#6b7fa3' },
+                    beginAtZero: true 
+                }
+            }
+        }
+    });
+}
+function switchChart(mode,btn){
+  buildThroughputChart(mode);
+  document.querySelectorAll('#chartToggle .btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+}
+buildThroughputChart('bar');
+
+/* ─── Outcome doughnut ───────────────────────────────────── */
+(function(){
+  const trueReported = {{ statistics.states_count.reported|default:0 }} + {{ statistics.states_count.completed|default:0 }};
+  const trueFailed   = {{ statistics.states_count.failed_analysis|default:0 }} + {{ statistics.states_count.failed_processing|default:0 }} + {{ statistics.states_count.failed_reporting|default:0 }};
+  const truePending  = {{ statistics.states_count.pending|default:0 }} + {{ statistics.states_count.running|default:0 }};
+  
+  const trueTotal    = trueReported + trueFailed + truePending;
+
+  const pending = [trueReported, trueFailed, truePending];
+  const colors  = ['#48bb78', '#f56565', '#718096'];
+  const labels  = ['Reported', 'Failed', 'Pending'];
+  
+  document.getElementById('donutTotal').textContent = trueTotal > 0 ? trueTotal.toLocaleString() : '—';
+  
+  const cv = trueTotal === 0 ? [1,0,0] : pending;
+  const cc = trueTotal === 0 ? ['rgba(255,255,255,.08)','transparent','transparent'] : colors;
+  
+  new Chart(document.getElementById('outcomeDonut'), {
+    type: 'doughnut',
+    data: { 
+        labels, 
+        datasets: [{ data: cv, backgroundColor: cc, borderWidth: 2, borderColor: '#0f1923', hoverOffset: 10 }] 
+    },
+    options: { 
+        cutout: '68%', 
+        animation: { animateRotate: true, duration: 1100, easing: 'easeOutBack' },
+        plugins: { legend: { display: false }, tooltip: TTP } 
+    }
+  });
+  
+  const leg = document.getElementById('outcomeLegend');
+  leg.innerHTML = ''; 
+  labels.forEach((l, i) => {
+    const pct = trueTotal ? Math.round(pending[i] / trueTotal * 100) : 0;
+    leg.innerHTML += `<div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="d-flex align-items-center gap-2">
+        <div style="width:9px;height:9px;border-radius:50%;background:${colors[i]};flex-shrink:0;"></div>
+        <span class="small text-muted">${l}</span>
+      </div>
+      <span class="small fw-bold text-white">${pending[i].toLocaleString()} <span class="text-muted fw-normal">(${pct}%)</span></span>
+    </div>`;
+  });
+})();
+
+/* ─── Malware families chart ─────────────────────────────── */
+{% if statistics.detections %}
+(function(){
+  const labels=[{% for b in statistics.detections %}{% if b.family %}"{{ b.family }}"{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+  const values=[{% for b in statistics.detections %}{% if b.family %}{{ b.total }}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+  if(!labels.length)return;
+  new Chart(document.getElementById('familyChart'),{
+    type:'bar',plugins:[staggerDelay],
+    data:{labels,datasets:[{
+      label:'Detections',data:values,
+      backgroundColor:Array.from({length:labels.length},(_,i)=>`hsla(${i*22},68%,55%,.65)`),
+      borderColor:     Array.from({length:labels.length},(_,i)=>`hsla(${i*22},68%,55%,1)`),
+      borderWidth:1,borderRadius:4,
+    }]},
+    options:{indexAxis:'y',responsive:true,
+      plugins:{legend:{display:false},tooltip:TTP},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b7fa3',precision:0},beginAtZero:true},
+        y:{grid:{display:false},ticks:{color:'#cbd5e0',font:{size:11}}}
+      }
+    }
+  });
+})();
+{% endif %}
+
+/* ─── ASN chart ──────────────────────────────────────────── */
+{% if statistics.asns %}
+(function(){
+  const labels=[{% for b in statistics.asns %}{% if b.asn %}"{{ b.asn }}"{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+  const values=[{% for b in statistics.asns %}{% if b.asn %}{{ b.total }}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+  if(!labels.length)return;
+  new Chart(document.getElementById('asnChart'),{
+    type:'bar',plugins:[staggerDelay],
+    data:{labels,datasets:[{
+      label:'Hits',data:values,
+      backgroundColor:Array.from({length:labels.length},(_,i)=>`hsla(${42+i*18},82%,55%,.65)`),
+      borderColor:     Array.from({length:labels.length},(_,i)=>`hsla(${42+i*18},82%,55%,1)`),
+      borderWidth:1,borderRadius:4,
+    }]},
+    options:{indexAxis:'y',responsive:true,
+      plugins:{legend:{display:false},tooltip:TTP},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b7fa3',precision:0},beginAtZero:true},
+        y:{grid:{display:false},ticks:{color:'#cbd5e0',font:{size:11}}}
+      }
+    }
+  });
+})();
+{% endif %}
+
+/* ─── Module performance helper ──────────────────────────── */
+function makeModuleChart(canvasId,labels,avgs,runs,barColor){
+  const canvas=document.getElementById(canvasId);
+  if(!canvas||!labels.length)return;
+  const top=Math.min(labels.length,10);
+  new Chart(canvas,{
+    plugins:[staggerDelay],
+    data:{
+      labels:labels.slice(0,top),
+      datasets:[
+        {type:'bar', label:'Avg (s)',data:avgs.slice(0,top),
+         backgroundColor:barColor+'88',borderColor:barColor,borderWidth:1,borderRadius:3,yAxisID:'y'},
+        {type:'line',label:'Runs',   data:runs.slice(0,top),
+         borderColor:'#718096',backgroundColor:'transparent',
+         borderWidth:1.5,borderDash:[5,3],pointRadius:3,pointHoverRadius:5,
+         tension:.35,yAxisID:'y2',animation:{duration:1200,easing:'easeOutQuart'}}
+      ]
+    },
+    options:{
+      responsive:true,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{color:'#6b7fa3',boxWidth:10,font:{size:10}}},tooltip:TTP},
+      scales:{
+        x: {grid:{display:false},ticks:{color:'#6b7fa3',font:{size:9},maxRotation:38}},
+        y: {position:'left', grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b7fa3',font:{size:9}},
+            beginAtZero:true,title:{display:true,text:'Avg (s)',color:'#4a6090',font:{size:9}}},
+        y2:{position:'right',grid:{display:false},           ticks:{color:'#6b7fa3',font:{size:9}},
+            beginAtZero:true,title:{display:true,text:'Runs',  color:'#4a6090',font:{size:9}}},
+      }
+    }
+  });
+}
+
+{% if statistics.processing %}
+makeModuleChart('processingBar',
+  [{% for n,t in statistics.processing.items %}"{{ n }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.processing.items %}{{ t.average }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.processing.items %}{{ t.runs }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  '#63b3ed');
+{% endif %}
+
+/* Signature Matching — 3-level priority */
+{% if statistics.signatures %}
+makeModuleChart('signaturesBar',
+  [{% for n,t in statistics.signatures.items %}"{{ n }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.signatures.items %}{{ t.average }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.signatures.items %}{{ t.runs }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  '#f6ad55');
+{% elif statistics.custom_statistics %}
+makeModuleChart('signaturesBar',
+  [{% for n,t in statistics.custom_statistics.items %}"{{ n }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.custom_statistics.items %}parseFloat("{{ t.average }}"){% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.custom_statistics.items %}{{ t.runs }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  '#f6ad55');
+{% else %}
+/* Fallback: derive from daily throughput — always produces a chart */
+(function(){
+  const pending = Math.max(0,totalAdded-totalReported-totalFailed);
+  /* fill fallback table */
+  const tbody=document.getElementById('sigFallbackBody');
+  if(tbody){
+    [{name:'Reported',count:totalReported},{name:'Failed',count:totalFailed},{name:'Pending',count:pending}]
+    .forEach(r=>{
+      const rate=totalAdded>0?Math.round(r.count/totalAdded*100):0;
+      tbody.innerHTML+=`<tr>
+        <td class="ps-2 text-white">${r.name}</td>
+        <td class="text-end" style="color:#f6ad55;">${r.count}</td>
+        <td class="text-end pe-2 text-muted">${rate}%</td>
+      </tr>`;
+    });
+  }
+  /* build chart from per-day reported array */
+  const labels=DAYS_DATA.labels.length?DAYS_DATA.labels:['Reported','Failed','Pending'];
+  const runs  =DAYS_DATA.labels.length?DAYS_DATA.reported:[totalReported,totalFailed,pending];
+  const maxRun=Math.max(...runs,1);
+  const avgs  =runs.map(v=>parseFloat((v/maxRun).toFixed(2)));
+  makeModuleChart('signaturesBar',labels,avgs,runs,'#f6ad55');
+})();
+{% endif %}
+
+{% if statistics.reporting %}
+makeModuleChart('reportingBar',
+  [{% for n,t in statistics.reporting.items %}"{{ n }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.reporting.items %}{{ t.average }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for n,t in statistics.reporting.items %}{{ t.runs }}{% if not forloop.last %},{% endif %}{% endfor %}],
+  '#68d391');
+{% endif %}
+
+/* ─── Node chart ─────────────────────────────────────────── */
+{% if statistics.distributed_tasks %}
+(function(){
+  const days=[],nodeMap={};
+  {% for day,block in statistics.distributed_tasks.items %}
+  days.push("{{ day }}");
+  {% for name,tasks in block.items %}
+  if(!nodeMap["{{ name }}"])nodeMap["{{ name }}"]=[];
+  nodeMap["{{ name }}"].push({{ tasks }});
+  {% endfor %}{% endfor %}
+  
+  // Sort days from oldest to newest
+  const originalDays = [...days];
+  days.sort((a, b) => new Date(a) - new Date(b));
+  
+  // Reorder nodeMap data according to sorted days
+  Object.keys(nodeMap).forEach(node => {
+    nodeMap[node] = days.map(day => {
+      const originalIndex = originalDays.indexOf(day);
+      return nodeMap[node][originalIndex] || 0;
+    });
+  });
+  
+  const palette=['#6495ed','#48bb78','#f6ad55','#fc8181','#b794f4','#76e4f7','#f687b3'];
+  new Chart(document.getElementById('nodeChart'),{
+    type:'bar',plugins:[staggerDelay],
+    data:{labels:days,datasets:Object.entries(nodeMap).map(([name,vals],i)=>({
+      label:name,data:vals,
+      backgroundColor:palette[i%palette.length]+'cc',
+      borderColor:palette[i%palette.length],borderWidth:1,borderRadius:3,stack:'n',
+    }))},
+    options:{
+      responsive:true,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{color:'#9aa5b4',boxWidth:12}},tooltip:TTP},
+      scales:{
+        x:{stacked:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b7fa3'}},
+        y:{stacked:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b7fa3',precision:0},beginAtZero:true}
+      }
+    }
+  });
+})();
+{% endif %}
+
+/* ─── Activity heatmap ───────────────────────────────────── */
+(function(){
+  const container = document.getElementById('activityHeatmap');
+  if (!container || !DAYS_DATA.labels.length) return;
+
+  let tooltip = document.getElementById('smartTip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'smartTip';
+    tooltip.style.cssText = 'position:fixed; display:none; background:#1e2d3d; color:#e2e8f0; padding:5px 10px; border-radius:6px; font-size:11px; z-index:99999; border:1px solid rgba(255,255,255,0.1); pointer-events:none; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-family:sans-serif;';
+    document.body.appendChild(tooltip);
+  }
+
+  const max = Math.max(...DAYS_DATA.added, 1);
+  
+  DAYS_DATA.labels.forEach((day, i) => {
+    const v = DAYS_DATA.added[i];
+    const cell = document.createElement('div');
+    cell.className = 'hm-cell';
+    cell.style.background = `rgba(56,181,248,${(0.08 + (v / max) * 0.92).toFixed(2)})`;
+    cell.style.transition = 'opacity .35s ease, transform .12s'; 
+
+    cell.addEventListener('mouseenter', () => {
+      tooltip.innerHTML = `<strong style="color:#63b3ed">${day}</strong><br/>${v} tasks added`;
+      tooltip.style.display = 'block';
+      
+      const rect = cell.getBoundingClientRect();
+      let tipLeft = rect.left + (rect.width / 2) - (tooltip.offsetWidth / 2);
+      
+      if (tipLeft < 20) {
+        tipLeft = 20; 
+      }
+      if (tipLeft + tooltip.offsetWidth > window.innerWidth - 20) {
+        tipLeft = window.innerWidth - tooltip.offsetWidth - 20;
+      }
+
+      tooltip.style.left = tipLeft + 'px';
+      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+    });
+
+    cell.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+
+    container.appendChild(cell);
+    
+  });
+})();
+
+/* ─── Table search ───────────────────────────────────────── */
+const tsInput=document.getElementById('tableSearch');
+if(tsInput){
+  tsInput.addEventListener('input',function(){
+    const q=this.value.toLowerCase();
+    document.querySelectorAll('#throughputTable tbody tr').forEach(r=>{
+      r.style.display=(r.dataset.date||'').includes(q)?'':'none';
+    });
+  });
+}
+
+/* ─── Custom Signatures Pagination ─── */
+const sigRows = document.querySelectorAll('.sig-row');
+let currentSigPage = 1;
+const sigRowsPerPage = 10;
+const totalSigPages = Math.ceil(sigRows.length / sigRowsPerPage);
+
+function renderSigPage(page) {
+  if(sigRows.length === 0) return;
+  
+  if(page < 1) page = 1;
+  if(page > totalSigPages) page = totalSigPages;
+  currentSigPage = page;
+
+  const start = (page - 1) * sigRowsPerPage;
+  const end = start + sigRowsPerPage;
+
+  sigRows.forEach((row, index) => {
+    row.style.display = (index >= start && index < end) ? '' : 'none';
+  });
+
+  const info = document.getElementById('sigPageInfo');
+  if(info) {
+    const actualEnd = Math.min(end, sigRows.length);
+    info.textContent = `Showing ${start + 1} to ${actualEnd} of ${sigRows.length} signatures`;
+  }
+
+  document.getElementById('btnPrevSig').disabled = (currentSigPage === 1);
+  document.getElementById('btnNextSig').disabled = (currentSigPage === totalSigPages);
+}
+
+function prevSigPage() { if(currentSigPage > 1) renderSigPage(currentSigPage - 1); }
+function nextSigPage() { if(currentSigPage < totalSigPages) renderSigPage(currentSigPage + 1); }
+
+if(sigRows.length > 0) {
+  renderSigPage(1);
+}
+window.addEventListener('load', function() {
+  const el = document.getElementById('pageContent');
+  if (el) {
+    el.style.transition = 'opacity .3s ease';
+    el.style.opacity = '1';
+  }
+});
+
+/* ─── System Health Details ───────────────────────────────── */
+(function(){
+  const BUF = 24;
+  const cpuBuf = new Array(BUF).fill(0);
+  const memBuf = new Array(BUF).fill(0);
+  const dskBuf = new Array(BUF).fill(0);
+  let _cpuChart = null, _memChart = null, _dskChart = null;
+  let _sparklinesReady = false;
+
+  function getThresholdColor(val) {
+    if (val <= 33) return { line: 'rgb(48,178,45)',  fill: 'rgba(48,178,45,0.10)'  };
+    if (val <= 66) return { line: 'rgb(254,215,31)', fill: 'rgba(254,215,31,0.10)' };
+    return                 { line: 'rgb(237,107,96)', fill: 'rgba(237,107,96,0.10)' };
+  }
+
+  function updateCardStyle(cardId, val) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const c   = getThresholdColor(val);
+    const rgb = c.line.replace('rgb(','').replace(')','').split(',').map(s=>s.trim()).join(',');
+    card.style.border           = `1px solid rgba(${rgb},0.25)`;
+    card.style.borderLeft       = `3px solid ${c.line}`;
+    card.style.background       = `rgba(${rgb},0.03)`;
+  }
+
+  function makeSparkline(id, buf, initVal) {
+    const canvas = document.getElementById(id);
+    if (!canvas) { console.warn('[Spark] canvas not found:', id); return null; }
+    const parent = canvas.parentElement;
+    if (parent && parent.offsetHeight === 0) parent.style.height = '58px';
+    const c = getThresholdColor(initVal || 0);
+    try {
+      return new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: buf.map((_, i) => i),
+          datasets: [{
+            data: [...buf],
+            borderColor: c.line,
+            backgroundColor: c.fill,
+            borderWidth: 1.8,
+            fill: true,
+            tension: 0.42,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 400, easing: 'easeInOutQuad' },
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: { display: false },
+            y: { display: false, min: 0, max: 100 }
+          }
+        }
+      });
+    } catch(e) {
+      console.error('[Spark] Chart create failed:', id, e);
+      return null;
+    }
+  }
+
+  function pushBuf(buf, val) {
+    buf.push(parseFloat(val) || 0);
+    if (buf.length > BUF) buf.shift();
+  }
+
+  function refreshSparkline(chart, buf) {
+    if (!chart) return;
+    const latest = buf[buf.length - 1] || 0;
+    const c = getThresholdColor(latest);
+    chart.data.datasets[0].data         = [...buf];
+    chart.data.labels                   = buf.map((_, i) => i);
+    chart.data.datasets[0].borderColor  = c.line;
+    chart.data.datasets[0].backgroundColor = c.fill;
+    chart.update('none');
+  }
+
+  function initSparklines() {
+    if (typeof Chart === 'undefined') { setTimeout(initSparklines, 200); return; }
+    if (_cpuChart) { _cpuChart.destroy(); _cpuChart = null; }
+    if (_memChart) { _memChart.destroy(); _memChart = null; }
+    if (_dskChart) { _dskChart.destroy(); _dskChart = null; }
+    _cpuChart = makeSparkline('cpuSparkline', cpuBuf, 0);
+    _memChart = makeSparkline('memSparkline', memBuf, 0);
+    _dskChart = makeSparkline('diskSparkline', dskBuf, 0);
+    _sparklinesReady = true;
+  }
+
+  /* Render process grid */
+  function renderProcessGrid(processes) {
+    const grid = document.getElementById('topProcessGrid');
+    const cnt  = document.getElementById('procCount');
+    if (!grid) return;
+    if (!processes || !processes.length) {
+      grid.innerHTML = '<div class="text-muted small p-2">No process data available.</div>';
+      if (cnt) cnt.textContent = '0';
+      return;
+    }
+    if (cnt) cnt.textContent = processes.length;
+    grid.innerHTML = processes.slice(0, 12).map(p => {
+      const user   = p.db_username ? `${p.username} / ${p.db_username}` : (p.username || '—');
+      const cpu    = (p.cpu_percent    || 0).toFixed(1);
+      const mem    = (p.memory_percent || 0).toFixed(1);
+      const cpuW   = Math.min(100, parseFloat(cpu));
+      const memW   = Math.min(100, parseFloat(mem));
+      const cpuCol = cpuW <= 33 ? '#30b22d' : cpuW <= 66 ? '#fed71f' : '#ed6b60';
+      const memCol = memW <= 33 ? '#30b22d' : memW <= 66 ? '#fed71f' : '#ed6b60';
+      return `
+      <div class="proc-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;
+                    gap:6px;margin-bottom:4px;">
+          <div style="font-size:0.78rem;font-weight:600;color:#e2e8f0;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                      max-width:140px;" title="${p.name||''}">${p.name||'—'}</div>
+          <div style="font-size:0.6rem;color:#6b7fa3;flex-shrink:0;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                      max-width:90px;" title="${user}">${user}</div>
+        </div>
+        <div style="display:flex;gap:14px;">
+          <div style="flex:1;">
+            <div style="font-size:0.58rem;color:#6b7fa3;letter-spacing:.05em;
+                        text-transform:uppercase;">CPU</div>
+            <div class="proc-bar">
+              <div class="proc-bar-fill" style="width:${cpuW}%;background:${cpuCol};"></div>
+            </div>
+            <div style="font-size:0.68rem;color:${cpuCol};margin-top:2px;
+                        font-weight:600;">${cpu}%</div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:0.58rem;color:#6b7fa3;letter-spacing:.05em;
+                        text-transform:uppercase;">MEM</div>
+            <div class="proc-bar">
+              <div class="proc-bar-fill" style="width:${memW}%;background:${memCol};"></div>
+            </div>
+            <div style="font-size:0.68rem;color:${memCol};margin-top:2px;
+                        font-weight:600;">${mem}%</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function pollAlerts() {
+    try {
+      const res  = await fetch('/api/notifications/list/?type=warning&type=error&limit=5');
+      const data = await res.json();
+      const el   = document.getElementById('statRecentAlerts');
+      if (!el) return;
+      if (!Array.isArray(data) || !data.length) {
+        el.innerHTML = '<p class="text-muted small mb-0">No recent system alerts</p>';
+        return;
+      }
+      el.innerHTML = data.map(alert => {
+        const isErr     = alert.type === 'error';
+        const borderCol = isErr ? '#ed6b60' : '#fed71f';
+        const bgCol     = isErr ? 'rgba(237,107,96,.04)' : 'rgba(254,215,31,.04)';
+        return `
+        <div style="border-left:2px solid ${borderCol};background:${bgCol};
+                    padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;
+                      align-items:flex-start;margin-bottom:3px;">
+            <span style="font-weight:600;font-size:0.78rem;color:#e2e8f0;">
+              ${alert.title}
+            </span>
+            <span style="font-size:0.65rem;color:#6b7fa3;
+                         white-space:nowrap;margin-left:8px;">
+              ${new Date(alert.created_at).toLocaleString()}
+            </span>
+          </div>
+          <div style="font-size:0.72rem;color:#8b95a5;line-height:1.5;">
+            ${alert.message.replace(/<br>/g, '<br>')}
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) { /* silent */ }
+  }
+
+  async function pollHealth() {
+    try {
+      const [sRes, pRes] = await Promise.all([
+        fetch('/apiv2/cuckoo/status/'),
+        fetch('/apiv2/cuckoo/top_processes/')
+      ]);
+
+      // Status
+      const sData = await sRes.json();
+      if (!sData.error && sData.data) {
+        const cpu  = parseFloat(sData.data.server?.cpu?.cpu_usage)        || 0;
+        const ram  = parseFloat(sData.data.server?.ram?.ram_percent_used) || 0;
+        const disk = parseFloat(sData.data.server?.storage?.used_by)      || 0;
+
+        const cpuEl  = document.getElementById('statCpuValue');
+        const memEl  = document.getElementById('statMemValue');
+        const diskEl = document.getElementById('statDiskValue');
+        if (cpuEl)  cpuEl.textContent  = cpu.toFixed(1)  + '%';
+        if (memEl)  memEl.textContent  = ram.toFixed(1)  + '%';
+        if (diskEl) diskEl.textContent = disk.toFixed(1) + '%';
+
+        const cpuLabel  = document.getElementById('statCpuLabel');
+        const memLabel  = document.getElementById('statMemLabel');
+        const diskLabel = document.getElementById('statDiskLabel');
+        if (cpuLabel)  cpuLabel.style.color  = getThresholdColor(cpu).line;
+        if (memLabel)  memLabel.style.color  = getThresholdColor(ram).line;
+        if (diskLabel) diskLabel.style.color = getThresholdColor(disk).line;
+
+        if (cpuEl)  cpuEl.style.color  = getThresholdColor(cpu).line;
+        if (memEl)  memEl.style.color  = getThresholdColor(ram).line;
+        if (diskEl) diskEl.style.color = getThresholdColor(disk).line;
+
+        pushBuf(cpuBuf, cpu);
+        pushBuf(memBuf, ram);
+        pushBuf(dskBuf, disk);
+
+        updateCardStyle('statCpuCard',  cpu);
+        updateCardStyle('statMemCard',  ram);
+        updateCardStyle('statDiskCard', disk);
+
+        if (_sparklinesReady) {
+          refreshSparkline(_cpuChart, cpuBuf);
+          refreshSparkline(_memChart, memBuf);
+          refreshSparkline(_dskChart, dskBuf);
+        }
+      } else {
+        console.warn('[SysHealth] status error or no data', sData);
+      }
+
+      // Processes
+      const pData = await pRes.json();
+      if (!pData.error && Array.isArray(pData.data)) {
+        renderProcessGrid(pData.data);
+      } else {
+        console.warn('[SysHealth] process error', pData);
+      }
+
+    } catch (e) {
+      console.warn('[SysHealth] poll failed:', e);
+      const cpuEl = document.getElementById('statCpuValue');
+      if (cpuEl && cpuEl.textContent === '—') cpuEl.textContent = 'N/A';
+      const memEl = document.getElementById('statMemValue');
+      if (memEl && memEl.textContent === '—') memEl.textContent = 'N/A';
+      const diskEl = document.getElementById('statDiskValue');
+      if (diskEl && diskEl.textContent === '—') diskEl.textContent = 'N/A';
+    }
+  }
+
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      initSparklines();
+      pollHealth();
+      pollAlerts();
+      setInterval(pollHealth, 3000);
+      setInterval(pollAlerts, 15000);
+    }, 300);
+  });
+})();
+</script>
+{% endblock %}  

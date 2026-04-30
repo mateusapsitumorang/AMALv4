@@ -6,10 +6,14 @@ from analysis import views as analysis_views
 from dashboard import views as dashboard_views
 from django.conf import settings
 from django.conf.urls import include
+from django.conf.urls.static import static
+from web.export_docx import export_analysis_docx
+   
 
 # from django.contrib.auth import views as auth_views
 from django.urls import path, re_path
-from django.views.generic.base import TemplateView
+
+from django.views.generic.base import TemplateView, RedirectView
 
 if settings.NOCAPTCHA:
     from captcha_admin import admin
@@ -21,8 +25,8 @@ if settings.TWOFA:
 
     admin.site.__class__ = OTPAdminSite
 
-admin.site.site_header = "CAPE Administration"
-admin.site.site_title = "CAPE Administration"
+admin.site.site_header = "Amal V4 Administration"
+admin.site.site_title = "Amal V4 Administration"
 
 from analysis import urls as analysis
 from apiv2 import urls as apiv2
@@ -30,14 +34,27 @@ from compare import urls as compare
 from dashboard import urls as dashboard
 from submission import urls as submission
 from audit import urls as audit
-
+from mobsf import urls as mobsf
+from two_factor.urls import urlpatterns as tf_urls
+from profiles import urls as profiles_urls
+from custom2fa.views import custom_google_otp_verify
 handler403 = "web.views.handler403"
 handler404 = "web.views.handler404"
 
 urlpatterns = [
+    path('accounts/login/', RedirectView.as_view(pattern_name='two_factor:login', permanent=False)),
+    path('accounts/password/reset/', RedirectView.as_view(pattern_name='password_reset', permanent=False)),
+    path('auth/google-otp/', custom_google_otp_verify, name='custom_google_otp_verify'),
     path("accounts/", include("allauth.urls")),
+    path('', include(tf_urls)),
+    path('auth/', include('resetotp.urls')),
     path("robots.txt", TemplateView.as_view(template_name="robots.txt", content_type="text/plain")),
+    path('guac/', include('guac.urls')),
+    path('', include('notifications.urls')),
+    path("analysis/<int:task_id>/export/docx/", export_analysis_docx, name="export_docx"),
+    path("statistics/", analysis_views.statistics_data, name="statistics_data"),
     re_path(r"^$", dashboard_views.index, name="dashboard"),
+    re_path(r"^profile/", include(profiles_urls)),
     re_path(r"^admin/", admin.site.urls),
     re_path(r"^analysis/", include(analysis)),
     re_path(r"^compare/", include(compare)),
@@ -55,4 +72,5 @@ urlpatterns = [
     re_path(r"^dashboard/", include(dashboard)),
     re_path(r"statistics/(?P<days>\d+)/$", analysis_views.statistics_data, name="statistics_data"),
     re_path(r"^audit/", include(audit), name="audit"),
-]
+    re_path(r"^mobsf/", include(mobsf)),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

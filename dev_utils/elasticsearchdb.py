@@ -15,15 +15,9 @@ from lib.cuckoo.common.config import Config
 repconf = Config("reporting")
 if repconf.elasticsearchdb.enabled:
     from elasticsearch import Elasticsearch
-
     elastic_handler = Elasticsearch(
-        hosts=[repconf.elasticsearchdb.host],
-        port=repconf.elasticsearchdb.get("port", 9200),
-        http_auth=(repconf.elasticsearchdb.get("username"), repconf.elasticsearchdb.get("password")),
-        use_ssl=repconf.elasticsearchdb.get("use_ssl", False),
-        verify_certs=repconf.elasticsearchdb.get("verify_certs", False),
-        timeout=120,
-    )
+        ["http://127.0.0.1:9200"],
+)
 
     ANALYSIS_INDEX_PREFIX = f"{repconf.elasticsearchdb.index}-analysis-"
     CALLS_INDEX_PREFIX = f"{repconf.elasticsearchdb.index}-calls-"

@@ -15,6 +15,10 @@ tests/test_objects/
 log/
 storage/
 conf/*.conf
+node_modules/
+scripts/
+modules/
+ml_models/
 
 web/web/secret_key.py
 tests/test_bson.bson.compressed
@@ -25,3 +29,4 @@ installer/kvm-config.sh
 
 docs/book/src/_build
 /.vs
+.env

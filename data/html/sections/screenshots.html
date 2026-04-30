@@ -1,21 +1,27 @@
 
-    <div class="card mt-4">
-        <div class="card-header">
-            <h4>Screenshots</h4>
-        </div>
-        <div class="card-body">
-            {% if results.shots %}
-            <div class="row">
-                {% for shot in results.shots %}
-                <div class="col-md-4 mb-4">
-                    <a href="data:image/jpeg;base64,{{shot.data}}" data-lightbox="screenshots">
-                        <img src="data:image/jpeg;base64,{{shot.data}}" class="img-fluid rounded" alt="Screenshot" />
-                    </a>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p>No screenshots available.</p>
-            {% endif %}
-        </div>
+<section id="screenshots" class="mb-4">
+  <div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary">
+      <h5 class="mb-0 text-white"><i class="fas fa-camera me-2 text-success"></i> Screenshots ({{ results.shots|length }})</h5>
     </div>
+    <div class="card-body">
+      {% if results.shots %}
+      <div class="row">
+        {% for shot in results.shots %}
+        <div class="col-md-6 mb-3 text-center">
+          <img src="data:image/jpeg;base64,{{shot.data}}"
+               style="max-width:100%;height:auto;border:1px solid #495057;border-radius:6px;"
+               alt="Screenshot {{shot.id}}" />
+          <div class="text-white-50 mt-1" style="font-size:0.8rem;">{{shot.id}}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="p-3 text-center text-white-50">
+        <i class="fas fa-image fa-2x mb-2"></i>
+        <p class="mb-0">No screenshots available.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

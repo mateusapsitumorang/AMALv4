@@ -18,9 +18,10 @@ from bson.objectid import ObjectId
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import StreamingHttpResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_safe
+from django.contrib.auth.models import User
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -163,6 +164,9 @@ def createProcessTreeNode(process):
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def index(request):
+    # Jika pengguna bukan admin maka redirect ke dashboard
+    if not request.user.is_staff:
+        return redirect('dashboard')
     conf = apiconf.get_config()
     parsed = {}
     # Parse out the config for the API
@@ -2100,10 +2104,6 @@ def _bytes2gb(size):
 
 @api_view(["GET"])
 def cuckoo_status(request):
-    # get
-    # print(request.query_params)
-    # post
-    # request.data
     resp = {}
     if not apiconf.cuckoostatus.get("enabled"):
         resp["error"] = True
@@ -2128,6 +2128,40 @@ def cuckoo_status(request):
         )
 
         if HAVE_PSUTIL:
+            def check_service(name):
+                try:
+                    result = subprocess.check_output(
+                        ["systemctl", "is-active", name],
+                        stderr=subprocess.DEVNULL,
+                    ).decode().strip()
+                    return result
+                except:
+                    return "unknown"
+
+            def check_mobsf():
+                try:
+                    conn = socket.create_connection(("127.0.0.1", 8002), timeout=2)
+                    conn.close()
+                    return "active"
+                except OSError:
+                    return "inactive"
+                
+            def check_misp():
+                try:
+                    conn = socket.create_connection(("127.0.0.1", 8443), timeout=2)
+                    conn.close()
+                    return "active"
+                except OSError:
+                    return "inactive"
+            
+            def check_internet():
+                try:
+                    conn = socket.create_connection(("8.8.8.8", 53), timeout=2)
+                    conn.close()
+                    return "connected"
+                except OSError:
+                    return "disconnected"
+                
             du = psutil.disk_usage("/")
             hdd_free = _bytes2gb(du.free)
             hdd_total = _bytes2gb(du.total)
@@ -2138,16 +2172,30 @@ def cuckoo_status(request):
             ram_free = _bytes2gb(vu.free)
             ram_total = _bytes2gb(vu.total)
             ram_used = _bytes2gb(vu.used)
+            ram_percent_used = vu.percent
+            
+            cpu_percent = psutil.cpu_percent(interval=0.5)
 
             # add more from https://pypi.org/project/psutil/
             resp["data"]["server"] = {
+                "cpu" : {
+                    "cpu_usage" : cpu_percent,
+                },
                 "storage": {
                     "free": hdd_free,
                     "total": hdd_total,
                     "used": hdd_used,
-                    "used_by": "{}%".format(hdd_percent_used),
+                    "used_by": hdd_percent_used,
                 },
-                "ram": {"free": ram_free, "total": ram_total, "used": ram_used},
+                "ram": {"free": ram_free, "total": ram_total, "used": ram_used, "ram_percent_used": ram_percent_used},
+                "services":{
+                    "internet" : check_internet(),
+                    "cape": check_service("cape"),
+                    "nginx": check_service("nginx"),
+                    "suricata": check_service("suricata"),
+                    "misp": check_misp(),
+                    "mobsf": check_mobsf()
+                }
             }
     return Response(resp)
 
@@ -2167,6 +2215,51 @@ def task_x_hours(request):
             results.setdefault(date.strftime("%Y-%m-%eT%H:%M:00"), samples)
     session.close()
     resp = {"error": False, "stats": results}
+    return Response(resp)
+
+
+@api_view(["GET"])
+def cuckoo_top_processes(request):
+    resp = {}
+    if not apiconf.cuckoostatus.get("enabled"):
+        resp["error"] = True
+        resp["error_value"] = "Cuckoo Status API is disabled"
+    else:
+        resp["error"] = False
+        if HAVE_PSUTIL:
+            processes = []
+            try:
+                for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'username']):
+                    try:
+                        info = proc.info
+                        if info['cpu_percent'] is not None and info['memory_percent'] is not None:
+                            os_username = info['username'] or 'unknown'
+                            db_username = None
+                            try:
+                                user_obj = User.objects.filter(username=os_username).first()
+                                if user_obj:
+                                    db_username = user_obj.username
+                            except Exception:
+                                db_username = None
+                            processes.append({
+                                'pid': info['pid'],
+                                'name': info['name'] or 'unknown',
+                                'cpu_percent': round(info['cpu_percent'], 1),
+                                'memory_percent': round(info['memory_percent'], 1),
+                                'username': os_username,
+                                'db_username': db_username,
+                            })
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                # Sort by CPU + Memory usage descending, take top 10
+                processes.sort(key=lambda x: x['cpu_percent'] + x['memory_percent'], reverse=True)
+                resp["data"] = processes[:10]
+            except Exception as e:
+                resp["error"] = True
+                resp["error_value"] = f"Failed to get processes: {str(e)}"
+        else:
+            resp["error"] = True
+            resp["error_value"] = "psutil not available"
     return Response(resp)
 
 
@@ -2561,4 +2654,47 @@ def dist_tasks_notification(request, task_id: int):
         # main_db.set_status(task.main_task_id, TASK_REPORTED)
         # log.debug("reporting main_task_id: {}".format(task.main_task_id))
         task.notificated = True
+
+
+from .utils.config_api_key import get_config_value, save_config_value
+from .utils.api_key_map import API_CONFIG_MAP
+@api_view(["GET", "POST"])
+def api_settings(request):
+
+    # POST → save api key
+    if request.method == "POST":
+        for name, apikey in request.data.items():
+            if name not in API_CONFIG_MAP:
+                continue
+
+            configs = API_CONFIG_MAP[name]
+
+            for cfg in configs:
+                save_config_value(
+                    cfg["file"],
+                    cfg["section"],
+                    cfg["key"],
+                    apikey
+                )
+
+        return Response({"status": "saved"})
+
+
+    # GET load api keys
+    data = {}
+
+    for name, configs in API_CONFIG_MAP.items():
+
+        # ambil dari config pertama saja
+        cfg = configs[0]
+
+        value = get_config_value(
+            cfg["file"],
+            cfg["section"],
+            cfg["key"]
+        )
+
+        data[name] = value
+
+    return Response(data)
 

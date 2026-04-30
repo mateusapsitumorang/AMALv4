@@ -2,20 +2,151 @@
 {% load static %}
 {% load socialaccount %}
 {% load crispy_forms_tags %}
-{% block title %}Sign Up{% endblock title %}
+{% block title %}
+  Sign Up · AMALV4 Sandbox
+{% endblock %}
 {% block content %}
+  <style>
+    /* Background */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    body {
+      background-image: url('/static/img/Login_Backround.png') !important;
+      background-size: cover !important;
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      background-attachment: fixed !important;
+      background-color: #0f1117 !important;
+    }
+    
+    /* Card blur */
+    .card {
+      background: rgba(15, 17, 23, 0.5) !important;
+      backdrop-filter: blur(6px) !important;
+      -webkit-backdrop-filter: blur(6px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Gap field form */
+    .mb-3,
+    .form-group {
+      margin-bottom: 1.2rem !important;
+    }
+    
+    /* label */
+    label {
+      margin-bottom: 0.4rem !important;
+      font-size: 0.875rem;
+      color: var(--secondary) !important;
+    }
+    ul {
+      display: none;
+    }
+    
+    /* Input height */
+    .form-control {
+      padding: 0.6rem 0.9rem !important;
+      font-size: 0.9rem !important;
+    }
+    /* Container bar */
+    .strength-meter {
+      height: 5px;
+      background-color: #eee;
+      margin-top: 10px;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    
+    /* Bagian bar yang bergerak */
+    .strength-meter-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease, background-color 0.3s ease;
+    }
+    
+    /* Teks keterangan */
+    .strength-text {
+      font-size: 0.8rem;
+      margin-top: 5px;
+      display: block;
+    }
+    
+    .info {
+      font-size: 0.8rem;
+      color: var(--secondary) !important;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.45rem;
+      margin-top: 5px;
+    }
+    
+    .info i {
+      font-size: 0.95rem;
+      line-height: 1.2;
+      margin-top: 0.1rem;
+      min-width: 1rem;
+      text-align: center;
+    }
+    
+    /* Password toggle icon */
+    .password-wrapper {
+      position: relative;
+    }
+    
+    .password-wrapper .toggle-password-icon {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      user-select: none;
+      transition: color 0.3s ease-in;
+    }
+    
+    .password-wrapper .toggle-password-icon:hover {
+      color: #cbd5e1;
+    }
+    
+    .password-wrapper input[type='password'],
+    .password-wrapper input[type='text'] {
+      padding-right: 2.5rem !important;
+    }
+  </style>
 
-<center>
-    <div class="container mx-5">
-        <div style="margin-top:60px" class="container">
-            <h2>Sign Up</h2>
-            <form method="post" autocomplete="off">
-                {% csrf_token %}
-                {{ form|crispy }}
-                <button class="btn btn-secondary" type="submit">Register</button>
-            </form>
+  <div class="m-0 start-0 top-0 d-flex w-100 justify-content-center align-items-center flex-column position-absolute" style="min-height: 100vh;">
+    <div class="card shadow-lg border-0" style="max-width:420px; width:100%; border-radius:15px;">
+      <div class="card-body p-4">
+        <!-- Sign Up Title -->
+        <div class="d-flex align-items-center justify-content-center gap-2 mb-4">
+          <img src="{{ STATIC_URL }}img/BSSN.png" width="60" height="60" alt="Logo" style="object-fit: contain; flex-shrink: 0;" />
+          <h3 class="mb-0 fw-semibold" style="line-height: 1; font-size: 2rem;">Sign Up to AMAL 4</h3>
         </div>
-        {% if settings.WEB_OAUTH.enabled %}
+
+        <!-- Form -->
+        <form method="post" autocomplete="off">
+          {% csrf_token %}
+          {{ form|crispy }}
+
+          <button class="btn btn-primary w-100 mt-2" type="submit">Register</button>
+        </form>
+
+        <!-- Login link -->
+        <div class="text-center mt-3">
+          <span class="text-muted small">Already have an account?</span>
+          <a href="{% url 'two_factor:login' %}" class="text-primary small">Login</a>
+        </div>
+      </div>
+    </div>
+    <!--                     {% if settings.WEB_OAUTH.enabled %}
         </br>
         <div style="width: 100%; height: 15px; border-bottom: 1px solid lightgray; text-align: center">
             <span class="text-white-50" style="margin-top:-15% !important; font-size: 11px; background-color: white; padding: 0px 10px;">OR</span>
@@ -124,8 +255,107 @@
             {% if settings.WEB_OAUTH.zoom %}<a class="btn btn-social-icon btn-lg btn-zoom" href="{% provider_login_url 'zoom' %}"><span class="fab fa-zoom"></span></a>{% endif %}
             {% if settings.WEB_OAUTH.okta %}<a class="btn btn-social-icon btn-lg btn-okta" href="{% provider_login_url 'okta' %}"><span class="fab fa-okta"></span></a>{% endif %}
 
-        </div>
-        {% endif %}
-    </div>
-    </center>
-{% endblock content %}
+        </div>                     -->
+    {% endif %}
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // Selector ID dengan ID input password
+      const passwordInput = document.querySelector('#id_password1')
+      const usernameInput = document.querySelector('#id_username')
+    
+      // Membuat elemen bar secara dinamis di bawah input
+      const meterContainer = document.createElement('div')
+      meterContainer.className = 'strength-meter'
+      const meterFill = document.createElement('div')
+      meterFill.className = 'strength-meter-fill'
+      const strengthText = document.createElement('span')
+      strengthText.className = 'strength-text'
+    
+      // Membuat informasi ketentuan password di bawah input
+      const info = document.createElement('span')
+      info.className = 'info'
+      info.innerHTML = '<i class="fa fa-info-circle" aria-hidden="true"></i> Password harus 8-16 karakter, tidak boleh mengandung username, tidak boleh memiliki 3 karakter berulang, dan harus mencakup huruf besar, huruf kecil, angka, dan simbol.'
+    
+      meterContainer.appendChild(meterFill)
+      passwordInput.parentNode.appendChild(meterContainer)
+      passwordInput.parentNode.appendChild(strengthText)
+      passwordInput.parentNode.appendChild(info)
+    
+      passwordInput.addEventListener('input', function () {
+        const val = passwordInput.value
+        const username = usernameInput ? usernameInput.value.toLowerCase() : ''
+        let score = 0
+    
+        if (val.length === 0) {
+          updateBar(0, '')
+          return
+        }
+        const hasUpper = /[A-Z]/.test(val)
+        const hasLower = /[a-z]/.test(val)
+        const hasNumber = /\d/.test(val)
+        const hasSpecial = /[^A-Za-z0-9]/.test(val)
+        const hasRepeats = /(.)\1{2,}/.test(val)
+        const containsUsername = username && val.toLowerCase().includes(username)
+        // 1. Cek Panjang (8-16 sesuai kode Python kamu)
+        if (val.length >= 8 && val.length <= 16) {
+          score += 1
+          // 2. Cek Karakter Berulang (TIDAK boleh ada 3 berurutan)
+          if (!hasRepeats && val.length > 0) {
+            score += 1
+            // 3. Cek Kompleksitas (Besar, Kecil, Angka, Simbol)
+            if (hasUpper && hasLower && hasNumber && hasSpecial) {
+              score += 1
+              // 4. Cek Username (TIDAK boleh mengandung username)
+              if (!containsUsername && val.length > 0) score += 1
+            }
+          }
+        }
+        // Penentuan Level
+        if (score <= 1) {
+          updateBar(25, 'Weak', '#ff4d4d')
+        } else if (score === 2) {
+          updateBar(50, 'Medium', '#ffd11a')
+        } else if (score === 3) {
+          updateBar(75, 'Strong', '#26de81')
+        } else if (score === 4) {
+          updateBar(100, 'Excellent', '#0fb9b1')
+        }
+      })
+    
+      function updateBar(width, text, color) {
+        meterFill.style.width = width + '%'
+        meterFill.style.backgroundColor = color
+        strengthText.innerText = text
+        strengthText.style.color = color
+      }
+    
+      // Toggle password visibility untuk password1 dan password2
+      const passwordInputs = document.querySelectorAll('input[type="password"]')
+    
+      passwordInputs.forEach((input) => {
+        // Bungkus input dengan wrapper jika belum
+        if (!input.parentElement.classList.contains('password-wrapper')) {
+          const wrapper = document.createElement('div')
+          wrapper.className = 'password-wrapper'
+          input.parentNode.insertBefore(wrapper, input)
+          wrapper.appendChild(input)
+        }
+    
+        // Buat icon toggle
+        const toggleIcon = document.createElement('i')
+        toggleIcon.className = 'fa-solid fa-eye toggle-password-icon'
+        input.parentNode.appendChild(toggleIcon)
+    
+        // Event listener untuk toggle
+        toggleIcon.addEventListener('click', function () {
+          const type = input.getAttribute('type') === 'password' ? 'text' : 'password'
+          input.setAttribute('type', type)
+          this.classList.toggle('fa-eye')
+          this.classList.toggle('fa-eye-slash')
+        })
+      })
+    })
+  </script>
+{% endblock %}
