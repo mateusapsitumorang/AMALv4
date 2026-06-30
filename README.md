@@ -1,4 +1,4 @@
-# AMAL v4 — Automatic Malware Analyzer
+# AMAL v4 - Automatic Malware Analyzer
 
 **AMAL (Automatic Malware Analyzer) v4** adalah platform *malware analysis sandbox* yang dikembangkan sebagai turunan/*fork* dari [CAPE Sandbox (CAPEv2)](https://github.com/kevoreilly/CAPEv2), dengan kustomisasi tambahan berupa dashboard analitik dan visualisasi yang ditujukan untuk mendukung kebutuhan analisis malware oleh **BSSN (Badan Siber dan Sandi Negara)**.
 
